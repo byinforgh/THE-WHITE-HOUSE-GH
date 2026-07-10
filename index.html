@@ -1,22 +1,25 @@
 <!DOCTYPE html>
 <html lang="en">
 <!--
-  THE WHITE HOUSE GH — BAR DASHBOARD (v4.5)
+  THE WHITE HOUSE GH — BAR DASHBOARD (v4.6)
+  New in v4.6: version-mismatch detector. The header now shows the
+  backend's reported version next to "Updated:". If Code.gs hasn't
+  actually been redeployed (still serving an older version, or an
+  old version that doesn't send a version at all), a clear red banner
+  explains exactly what to fix — no more guessing whether a redeploy
+  "took". Requires Code.gs v4.7+ to report a version at all; on an
+  older backend the banner just says "backend version unknown" and
+  tells you to redeploy.
+
   New in v4.5: offline queue — Quick Sell and Restock now save
   locally and auto-retry if the connection drops mid-request, instead
   of just failing. A connection status pill (🟢/🔴) sits in the header,
   and a banner shows any actions still waiting to sync, with a manual
-  "Retry now". Quick Sell field labels stay visible even after you
-  type into them (previously the placeholder text disappeared once
-  filled, making it hard to tell fields apart).
-  Requires Code.gs v4.5 or later on the backend (adds a "Client
-  Request ID" idempotency column so a retried request can't
-  accidentally log a sale/restock twice) — redeploy Code.gs first.
+  "Retry now".
 
-  New in v4.4: Quick Sell card (ring up sales without the sheet, via
-  the quickSell endpoint), camera-based QR/barcode scan-to-lookup for
-  customers + generate a printable QR ID card, and a Shift Summary
-  card with one-tap "copy as text" for sharing on WhatsApp/SMS.
+  New in v4.4: Quick Sell card, camera-based QR/barcode scan-to-lookup
+  for customers + generate a printable QR ID card, and a Shift
+  Summary card with one-tap "copy as text" for sharing on WhatsApp/SMS.
 -->
 <head>
 <meta charset="UTF-8">
@@ -34,6 +37,9 @@ body{background:var(--black);color:var(--text);font-family:'Syne',sans-serif;min
 .logo span{color:var(--text-dim);font-weight:400;font-size:11px;display:block;letter-spacing:2px;margin-top:2px;}
 .header-right{display:flex;align-items:center;gap:14px;}
 .last-refresh{font-size:11px;color:var(--muted);font-family:'Space Mono',monospace;}
+.version-pill{font-size:10px;font-family:'Space Mono',monospace;padding:2px 8px;border-radius:10px;margin-left:6px;border:1px solid var(--border);}
+.version-pill.ok{color:var(--green);border-color:var(--green);}
+.version-pill.bad{color:var(--red);border-color:var(--red);}
 .conn-status{font-size:11px;font-family:'Space Mono',monospace;padding:4px 10px;border-radius:20px;background:var(--surface);border:1px solid var(--border);}
 .conn-status.online{color:var(--green);border-color:var(--green);}
 .conn-status.offline{color:var(--red);border-color:var(--red);}
@@ -115,6 +121,11 @@ tr.low-row{background:#1a0a0a;}
 .error-banner{display:none;background:#2a1a0a;border:1px solid var(--gold-dim);border-radius:8px;padding:14px 18px;margin-bottom:20px;font-size:12px;line-height:1.6;color:#ffdca8;}
 .error-banner.active{display:block;}
 .error-banner b{color:var(--gold);}
+.version-banner{display:none;background:#2a0a0a;border:1px solid var(--red);border-radius:8px;padding:14px 18px;margin-bottom:20px;font-size:12px;line-height:1.7;color:#ffc9c9;}
+.version-banner.active{display:block;}
+.version-banner b{color:var(--red);}
+.version-banner ol{margin:8px 0 0 18px;padding:0;}
+.version-banner li{margin-bottom:4px;}
 .flash{color:var(--green);}
 .quick-sell-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:8px;max-height:280px;overflow-y:auto;margin-top:4px;}
 .quick-sell-item{background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:10px 12px;cursor:pointer;transition:border-color .15s;text-align:left;display:flex;flex-direction:column;gap:2px;}
@@ -169,6 +180,7 @@ tr.low-row{background:#1a0a0a;}
 </div>
 
 <div class="main">
+  <div class="version-banner" id="versionBanner"></div>
   <div class="error-banner" id="errorBanner"></div>
   <div class="pending-banner" id="pendingBanner"></div>
 
@@ -277,26 +289,18 @@ tr.low-row{background:#1a0a0a;}
 // SAME deployment + "New version" — that's what makes changes go
 // live at this same URL.
 const API_URL = 'https://script.google.com/macros/s/AKfycbyycYKCEtRchk0eToXIlMLgs3RmWIsKuUppD3UprPO8zLi9N5a9PIgn9uN4IKeip24E/exec';
+
+// v4.6: the version this dashboard.html was built to work with. If
+// the backend reports anything else (or nothing), that's proof the
+// live deployment is stale — see renderVersionBanner().
+const EXPECTED_BACKEND_VERSION = '4.7';
+
 let barData = {stock: [], todayOrders: [], staff: [], topSellers: [], staleStock: [], restockLog: [], revenueByPayment: []};
 let activeStockCategory = 'All';
 let expandedMetric = null;
 
 // =====================
 // v4.5 — OFFLINE QUEUE
-// If a Quick Sell or Restock can't reach the server (no internet, or
-// wifi drops mid-request), it's saved here in the browser instead of
-// just failing. It auto-retries when the connection comes back, or
-// you can hit "Retry now". Each queued action carries a random
-// clientId; Code.gs v4.5+ uses that to avoid double-logging a sale
-// if the FIRST attempt actually got through and only the reply back
-// to the browser was lost.
-//
-// This is a helpful safety net, not a guarantee — if the phone itself
-// is closed/loses power before it ever syncs, the queue goes with it.
-// For genuinely no-signal nights, use the Search & Sell sheet directly
-// as the backup (it works with zero dashboard involvement), or note
-// the sale on paper and enter it as a Quick Sell once you're back
-// online — either is fine, just don't do both for the same sale.
 // =====================
 const PENDING_KEY = 'whgh_pending_actions_v1';
 
@@ -319,10 +323,6 @@ function queueAction(kind, label, url, clientId){
   renderPendingBanner();
 }
 
-// Attempts a fetch; if it fails for network reasons (not a server-side
-// validation error), queues it instead of surfacing a dead-end error.
-// Returns {ok:true, data} on success, or {ok:false, queued:true} if it
-// was queued, or {ok:false, error} if it's a real (non-network) error.
 async function fetchOrQueue(url, kind, label, clientId){
   try{
     const res = await fetch(url + '&clientId=' + encodeURIComponent(clientId));
@@ -331,12 +331,6 @@ async function fetchOrQueue(url, kind, label, clientId){
     if(!data.success) return { ok: false, error: data.error || 'Request failed', queued: false };
     return { ok: true, data };
   }catch(e){
-    // A TypeError from fetch() itself (as opposed to a thrown Error
-    // above) means the request never reached the server — that's the
-    // case worth queuing for auto-retry. Reuse the SAME clientId on
-    // the retry: if this exact request actually did reach the server
-    // and only the reply was lost, Code.gs recognizes the id and
-    // avoids logging the sale/restock twice.
     if(e instanceof TypeError || /network|fetch/i.test(e.message||'')){
       queueAction(kind, label, url, clientId);
       return { ok: false, queued: true, error: 'No connection — queued, will send automatically once back online.' };
@@ -356,13 +350,10 @@ async function flushPendingQueue(silent){
       if(!res.ok) throw new Error('status ' + res.status);
       const data = await res.json();
       if(data.success) { succeeded++; continue; }
-      // A real validation error (not a network failure) — drop it
-      // from the queue rather than retrying forever, but keep it
-      // visible so staff know it needs manual attention.
       action.error = data.error || 'Failed';
       stillPending.push(action);
     }catch(e){
-      stillPending.push(action); // still offline / still failing — keep queued
+      stillPending.push(action);
     }
   }
   savePendingQueue(stillPending);
@@ -393,7 +384,6 @@ function updateConnStatus(){
 window.addEventListener('online', () => { updateConnStatus(); flushPendingQueue(false); });
 window.addEventListener('offline', updateConnStatus);
 
-
 function showApiError(msg){
   const el = document.getElementById('errorBanner');
   el.innerHTML = "<b>&#9888; Dashboard can't reach the sheet:</b> " + msg +
@@ -404,11 +394,35 @@ function clearApiError(){
   document.getElementById('errorBanner').classList.remove('active');
 }
 
+// v4.6: separate, louder banner specifically for "the deployment is
+// running old code" — distinct from a hard connection failure, and
+// gives the exact click path instead of a generic message.
+function renderVersionBanner(reportedVersion){
+  const el = document.getElementById('versionBanner');
+  const pill = document.getElementById('versionPill');
+  if(reportedVersion === EXPECTED_BACKEND_VERSION){
+    el.classList.remove('active'); el.innerHTML = '';
+    if(pill){ pill.textContent = 'v' + reportedVersion; pill.className = 'version-pill ok'; }
+    return;
+  }
+  if(pill){ pill.textContent = reportedVersion ? ('v' + reportedVersion + ' (stale)') : 'unknown version'; pill.className = 'version-pill bad'; }
+  el.classList.add('active');
+  el.innerHTML = `<b>&#9888; Backend is not up to date.</b> This dashboard expects backend <b>v${EXPECTED_BACKEND_VERSION}</b>, but the live deployment ` +
+    (reportedVersion ? `is reporting <b>v${reportedVersion}</b>` : `didn't report a version at all (meaning it's running code from before v4.7)`) +
+    `. Your Code.gs edits are NOT live yet. Fix it now:` +
+    `<ol>
+       <li>Open the sheet &gt; <b>Extensions &gt; Apps Script</b>. Confirm Code.gs actually contains <code>var BACKEND_VERSION = '${EXPECTED_BACKEND_VERSION}';</code> near the top — if not, paste in the latest Code.gs and Save.</li>
+       <li><b>Deploy &gt; Manage deployments</b> &gt; click the pencil (&#9998;) icon on the <u>existing</u> deployment (don't create a new one — that gives a different URL).</li>
+       <li>Set Version to <b>New version</b>, then click <b>Deploy</b>.</li>
+       <li>Hard-refresh this page (Cmd/Ctrl+Shift+R).</li>
+     </ol>`;
+}
+
 async function loadData(){
   updateConnStatus();
   renderPendingBanner();
   if(navigator.onLine) flushPendingQueue(true);
-  document.getElementById('lastRefresh').textContent = 'Refreshing...';
+  document.getElementById('lastRefresh').innerHTML = 'Refreshing...';
   try{
     const res = await fetch(API_URL + '?action=getBarData&t=' + Date.now());
     if(!res.ok){ throw new Error('Server responded with status ' + res.status); }
@@ -416,7 +430,8 @@ async function loadData(){
     if(!data.success) throw new Error(data.error || 'Unknown error');
     barData = data;
     clearApiError();
-    document.getElementById('lastRefresh').textContent = 'Updated: ' + new Date().toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit'});
+    document.getElementById('lastRefresh').innerHTML = 'Updated: ' + new Date().toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit'}) + ' <span class="version-pill" id="versionPill"></span>';
+    renderVersionBanner(data.backendVersion || null);
     renderMetrics();
     renderLowStockBanner();
     renderOrders();
@@ -460,7 +475,6 @@ function renderMetrics(){
       <div class="metric-value">${(barData.menu||[]).length}</div>
       <div class="metric-sub">cocktails + straight-sell</div>
     </div>`;
-  // re-apply expanded state after a refresh, if a panel was open
   if(expandedMetric){ renderMetricDetail(expandedMetric); }
 }
 
@@ -522,11 +536,6 @@ function renderOrders(){
   }).join('');
 }
 
-// Clickable category tabs — filters the Bar Stock table below.
-// Categories are derived on the backend from Bar Recipes; anything
-// not sold as its own line item is grouped under "Bar Ingredient".
-// v4.3: defensively falls back to 'Bar Ingredient' client-side too,
-// so a stale/older backend can never produce an "undefined" tab.
 function renderStockTabs(){
   const stock = barData.stock || [];
   const counts = {};
@@ -606,7 +615,6 @@ function renderStaleStock(){
     </div>`).join('');
 }
 
-// v4.3: full restock history — date, time, item, qty, and who did it.
 function renderRestockLog(){
   const log = barData.restockLog || [];
   const el = document.getElementById('restockLogBody');
@@ -633,8 +641,6 @@ function renderStaff(){
     </div>`).join('');
 }
 
-// v4.3: fills the "Restocked by" dropdown from Staff, so the person
-// restocking picks their initials instead of typing a name.
 function populateStaffDropdowns(){
   const staff = (barData.staff||[]).filter(s=>s.initials && s.initials.trim());
   const sel = document.getElementById('restockBy');
@@ -644,14 +650,11 @@ function populateStaffDropdowns(){
   if(staff.some(s=>s.initials===current)) sel.value = current;
 }
 
-// v4.3: autocomplete list of known stock item names for the restock field.
 function populateStockDatalist(){
   const items = (barData.stock||[]).map(s=>s.item);
   document.getElementById('stockItemList').innerHTML = items.map(i=>`<option value="${i}">`).join('');
 }
 
-// Accepts a phone number OR a customer ID in any short form
-// (THWGH1 / GH1 / 1) — matched flexibly on the backend.
 let lastFoundCustomer = null;
 async function lookupCustomer(prefillQuery){
   const input = document.getElementById('custPhoneInput');
@@ -675,17 +678,11 @@ async function lookupCustomer(prefillQuery){
       resultEl.innerHTML = `<b>${data.custId}</b> — ${data.name}<br>Phone: ${data.phone||'—'}<br>Loyalty points: ${data.loyaltyPoints}<br>Total visits: ${data.totalVisits}<br>Last visit: ${data.lastVisit||'—'}<br><button class="btn" style="margin-top:10px" onclick="generateCustomerQR()">&#127915; GENERATE QR ID CARD</button>`;
     }
   }catch(e){
-    // v4.3: show the real error instead of a generic message, so a
-    // stale deployment / auth issue is distinguishable from a real bug.
     resultEl.innerHTML = '<span style="color:var(--red)">Error: ' + (e.message||'connection failed') + '. See the yellow banner at the top of the page for the likely cause.</span>';
     showApiError(e.message || 'Customer lookup failed.');
   }
 }
 
-// v4.4: renders a scannable QR code containing the customer's ID —
-// print/laminate it as a loyalty card so next time staff scan it
-// instead of typing the ID in. Uses the qrcodejs library (loaded via
-// CDN at the top of the page) purely client-side, no external API.
 function generateCustomerQR(){
   if(!lastFoundCustomer) return;
   const box = document.getElementById('qrCardBox');
@@ -737,9 +734,6 @@ async function submitRestock(){
   }
 }
 
-// =====================
-// v4.4 — QR / BARCODE SCANNER (camera-based, no external service)
-// =====================
 let scannerStream = null;
 let scannerRAF = null;
 
@@ -790,26 +784,8 @@ function scanLoop(){
   scannerRAF = requestAnimationFrame(scanLoop);
 }
 
-// =====================
-// v4.6 — QUICK SELL, rebuilt as a multi-item CART
-// -----------------------------------------------
-// Changes from v4.4/v4.5:
-//  - Tapping a menu tile now ADDS it to a cart instead of opening a
-//    single-item panel. Tap it again (or use the +/- steppers in the
-//    cart) to change quantity.
-//  - The cart shows a running subtotal, and one shared Staff/
-//    Customer/Payment panel is used to check the whole cart out at
-//    once — not one prompt per item.
-//  - Menu tiles are built with real DOM nodes + addEventListener and
-//    a data-item attribute (not string-escaped onclick="..."), which
-//    removes an entire class of "clicked X but it rang up Y" bugs
-//    caused by quote-escaping mismatches in item names.
-//  - The staff dropdown now fails LOUDLY if barData.staff has no
-//    usable entries, instead of silently rendering an empty <select>
-//    that just looks like nothing happened when tapped.
-// =====================
 let quickSellCategory = 'All';
-let cart = {}; // itemName -> qty
+let cart = {};
 
 function renderQuickSellTabs(){
   const menu = barData.menu || [];
@@ -835,13 +811,6 @@ function setQuickSellCategory(cat){
   renderQuickSellMenu();
 }
 
-// Builds each menu tile as a real DOM node with a data-item attribute
-// and a click listener bound to the exact item object — this is what
-// actually fixes "I tapped X but it added Y": the previous version
-// built onclick="openQuickSellPanel('...')" strings by hand, and any
-// apostrophe or odd character in an item name (or an escaping slip)
-// could make the wrong literal get passed in. Reading data-item back
-// out of the element that was actually clicked can't drift like that.
 function renderQuickSellMenu(){
   const q = (document.getElementById('quickSellSearch').value||'').toLowerCase();
   let menu = barData.menu || [];
@@ -861,9 +830,6 @@ function renderQuickSellMenu(){
       <span class="qs-name"></span>
       <span class="qs-price">&#8373;${m.price.toFixed(2)}</span>
       <span class="qs-cat"></span>`;
-    // Set text content via properties, not innerHTML interpolation,
-    // so item names can never be misread as markup or break tile
-    // structure either — belt-and-braces alongside the data-item fix.
     btn.querySelector('.qs-name').textContent = m.item;
     btn.querySelector('.qs-cat').textContent = m.category || '';
     btn.addEventListener('click', () => addToCart(m.item));
@@ -899,8 +865,6 @@ function cartSubtotal(){
   return total;
 }
 
-// Renders the shared checkout panel: cart lines + subtotal, then
-// Staff/Customer/Payment fields, shown whenever the cart isn't empty.
 function renderQuickSellPanel(){
   const panel = document.getElementById('quickSellPanel');
   const menu = barData.menu || [];
@@ -914,8 +878,6 @@ function renderQuickSellPanel(){
 
   panel.classList.add('show');
 
-  // Preserve whatever the person already typed/picked in the panel
-  // across re-renders (e.g. after tapping +/- on a cart line).
   const prevStaff = document.getElementById('qsStaff') ? document.getElementById('qsStaff').value : '';
   const prevCustomer = document.getElementById('qsCustomer') ? document.getElementById('qsCustomer').value : '';
   const prevNewName = document.getElementById('qsNewName') ? document.getElementById('qsNewName').value : '';
@@ -969,10 +931,6 @@ function renderQuickSellPanel(){
     </div>
     <div id="qsResult" style="margin-top:8px;font-size:12px"></div>`;
 
-  // Cart line HTML is static markup (numbers only); item names are
-  // inserted separately via textContent right below, never spliced
-  // into an HTML string — so an unusual character in a name can
-  // never break a row or misattribute an action to the wrong item.
   document.getElementById('cartList').innerHTML = cartRowsHtml;
   document.getElementById('cartList').querySelectorAll('.cart-row').forEach(row => {
     const name = decodeURIComponent(row.dataset.cartItem);
@@ -982,10 +940,6 @@ function renderQuickSellPanel(){
     row.querySelector('.cart-remove').addEventListener('click', () => setCartQty(name, 0));
   });
 
-  // Staff dropdown — built defensively. If barData.staff is genuinely
-  // empty (e.g. Staff sheet not filled in, or fetch happened before
-  // data loaded), the warning banner above already told the person
-  // why instead of leaving a silent, unexplained empty list.
   const staffSel = document.getElementById('qsStaff');
   staffSel.innerHTML = '<option value="">Select staff...</option>' +
     staff.map(s => `<option value="${s.initials}">${s.initials}${s.name?' — '+s.name:''}</option>`).join('');
@@ -1011,11 +965,6 @@ function cancelQuickSellCart(){
   clearCart();
 }
 
-// Submits the whole cart as a sequence of quickSell calls (the
-// backend's processSale_ handles one item at a time), sharing the
-// same staff/customer/payment/clientId-per-line across all of them.
-// Each line gets its own idempotency clientId so a retried/queued
-// line can't double-log independently of the others.
 async function submitQuickSellCart(){
   const staffInitials = document.getElementById('qsStaff').value;
   const custQuery = document.getElementById('qsCustomer').value.trim();
@@ -1039,7 +988,6 @@ async function submitQuickSellCart(){
   resultEl.innerHTML = '';
 
   const lineResults = [];
-  let anyQueued = false;
   let firstError = null;
 
   for(const itemName of itemNames){
@@ -1052,8 +1000,7 @@ async function submitQuickSellCart(){
     const label = `Sale: ${qty} x ${itemName} (${staffInitials})`;
     const result = await fetchOrQueue(url, 'quickSell', label, clientId);
     lineResults.push({ itemName, qty, result });
-    if(result.queued) anyQueued = true;
-    else if(!result.ok && !firstError) firstError = result.error;
+    if(!result.ok && !result.queued && !firstError) firstError = result.error;
   }
 
   if(firstError && lineResults.every(r => !r.result.ok && !r.result.queued)){
@@ -1088,9 +1035,6 @@ async function submitQuickSellCart(){
   if(failed.length === 0){
     setTimeout(()=>{ clearCart(); loadData(); }, queued.length ? 3200 : 1800);
   }else{
-    // Remove the lines that actually went through (or got queued) so
-    // the person can retry just what's left, instead of re-selling
-    // items that already succeeded.
     lineResults.forEach(r => { if(r.result.ok || r.result.queued) delete cart[r.itemName]; });
     confirmBtn.disabled = false;
     confirmBtn.textContent = '\u2713 CONFIRM SALE — \u20b5' + cartSubtotal().toFixed(2);
@@ -1099,10 +1043,6 @@ async function submitQuickSellCart(){
   }
 }
 
-// =====================
-// v4.4 — SHIFT SUMMARY (built entirely from data already loaded —
-// no extra server round-trip)
-// =====================
 function generateShiftSummary(){
   const orders = barData.todayOrders || [];
   const el = document.getElementById('shiftSummaryBody');
