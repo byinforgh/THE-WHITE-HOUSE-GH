@@ -1,13 +1,22 @@
 <!DOCTYPE html>
 <html lang="en">
 <!--
-  THE WHITE HOUSE GH — BAR DASHBOARD (v4.4)
+  THE WHITE HOUSE GH — BAR DASHBOARD (v4.5)
+  New in v4.5: offline queue — Quick Sell and Restock now save
+  locally and auto-retry if the connection drops mid-request, instead
+  of just failing. A connection status pill (🟢/🔴) sits in the header,
+  and a banner shows any actions still waiting to sync, with a manual
+  "Retry now". Quick Sell field labels stay visible even after you
+  type into them (previously the placeholder text disappeared once
+  filled, making it hard to tell fields apart).
+  Requires Code.gs v4.5 or later on the backend (adds a "Client
+  Request ID" idempotency column so a retried request can't
+  accidentally log a sale/restock twice) — redeploy Code.gs first.
+
   New in v4.4: Quick Sell card (ring up sales without the sheet, via
   the quickSell endpoint), camera-based QR/barcode scan-to-lookup for
   customers + generate a printable QR ID card, and a Shift Summary
   card with one-tap "copy as text" for sharing on WhatsApp/SMS.
-  Requires Code.gs v4.4 or later on the backend (for the quickSell
-  endpoint) — redeploy Code.gs first if you haven't already.
 -->
 <head>
 <meta charset="UTF-8">
@@ -25,6 +34,16 @@ body{background:var(--black);color:var(--text);font-family:'Syne',sans-serif;min
 .logo span{color:var(--text-dim);font-weight:400;font-size:11px;display:block;letter-spacing:2px;margin-top:2px;}
 .header-right{display:flex;align-items:center;gap:14px;}
 .last-refresh{font-size:11px;color:var(--muted);font-family:'Space Mono',monospace;}
+.conn-status{font-size:11px;font-family:'Space Mono',monospace;padding:4px 10px;border-radius:20px;background:var(--surface);border:1px solid var(--border);}
+.conn-status.online{color:var(--green);border-color:var(--green);}
+.conn-status.offline{color:var(--red);border-color:var(--red);}
+.pending-banner{display:none;background:#0f1a2a;border:1px solid var(--teal);border-radius:8px;padding:14px 18px;margin-bottom:20px;font-size:12px;line-height:1.6;}
+.pending-banner.active{display:block;}
+.pending-banner b{color:var(--teal);}
+.pending-item{display:flex;justify-content:space-between;padding:5px 0;border-bottom:1px solid #16202e;}
+.pending-item:last-of-type{border-bottom:none;}
+.pending-actions{display:flex;gap:8px;margin-top:10px;}
+.pending-actions .btn{width:auto;padding:8px 16px;font-size:11px;}
 .refresh-btn{background:var(--border);border:none;color:var(--text);padding:8px 16px;border-radius:5px;cursor:pointer;font-size:12px;font-weight:700;letter-spacing:1px;font-family:'Syne',sans-serif;}
 .refresh-btn:hover{background:var(--gold);color:var(--black);}
 .main{padding:20px 24px;max-width:1300px;margin:0 auto;}
@@ -107,6 +126,7 @@ tr.low-row{background:#1a0a0a;}
 .quick-sell-panel.show{display:block;}
 .quick-sell-panel .qs-title{font-size:13px;font-weight:800;color:var(--gold);margin-bottom:12px;}
 .qs-field-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px;}
+.qs-label{font-size:10px;font-weight:700;color:var(--text-dim);letter-spacing:0.5px;margin-bottom:4px;text-transform:uppercase;}
 .scanner-modal{display:none;position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.9);z-index:1000;align-items:center;justify-content:center;flex-direction:column;padding:20px;}
 .scanner-modal.show{display:flex;}
 .scanner-modal video{width:100%;max-width:420px;border-radius:8px;border:2px solid var(--teal);}
@@ -128,11 +148,12 @@ tr.low-row{background:#1a0a0a;}
     <img src="logo.jpg" alt="The White House GH" class="brand-logo" onerror="this.style.display='none'">
     <div class="logo">THE WHITE HOUSE GH <span>BAR DASHBOARD</span></div>
   </div>
-  <div class="header-right"><span class="last-refresh" id="lastRefresh">Loading...</span><button class="refresh-btn" onclick="loadData()">&#8635; REFRESH</button></div>
+  <div class="header-right"><span class="conn-status" id="connStatus">&#9679; checking...</span><span class="last-refresh" id="lastRefresh">Loading...</span><button class="refresh-btn" onclick="loadData()">&#8635; REFRESH</button></div>
 </div>
 
 <div class="main">
   <div class="error-banner" id="errorBanner"></div>
+  <div class="pending-banner" id="pendingBanner"></div>
 
   <div class="low-stock-banner" id="lowStockBanner">
     <div class="low-stock-banner-title">&#9888; LOW STOCK — RESTOCK NEEDED</div>
@@ -243,6 +264,119 @@ let barData = {stock: [], todayOrders: [], staff: [], topSellers: [], staleStock
 let activeStockCategory = 'All';
 let expandedMetric = null;
 
+// =====================
+// v4.5 — OFFLINE QUEUE
+// If a Quick Sell or Restock can't reach the server (no internet, or
+// wifi drops mid-request), it's saved here in the browser instead of
+// just failing. It auto-retries when the connection comes back, or
+// you can hit "Retry now". Each queued action carries a random
+// clientId; Code.gs v4.5+ uses that to avoid double-logging a sale
+// if the FIRST attempt actually got through and only the reply back
+// to the browser was lost.
+//
+// This is a helpful safety net, not a guarantee — if the phone itself
+// is closed/loses power before it ever syncs, the queue goes with it.
+// For genuinely no-signal nights, use the Search & Sell sheet directly
+// as the backup (it works with zero dashboard involvement), or note
+// the sale on paper and enter it as a Quick Sell once you're back
+// online — either is fine, just don't do both for the same sale.
+// =====================
+const PENDING_KEY = 'whgh_pending_actions_v1';
+
+function genClientId(){
+  if(window.crypto && crypto.randomUUID) return crypto.randomUUID();
+  return 'cid-' + Date.now() + '-' + Math.random().toString(36).slice(2);
+}
+
+function getPendingQueue(){
+  try{ return JSON.parse(localStorage.getItem(PENDING_KEY) || '[]'); }
+  catch(e){ return []; }
+}
+function savePendingQueue(queue){
+  try{ localStorage.setItem(PENDING_KEY, JSON.stringify(queue)); }catch(e){ /* storage full/unavailable — nothing more we can do client-side */ }
+}
+function queueAction(kind, label, url, clientId){
+  const queue = getPendingQueue();
+  queue.push({ id: clientId, kind, label, url, queuedAt: new Date().toISOString() });
+  savePendingQueue(queue);
+  renderPendingBanner();
+}
+
+// Attempts a fetch; if it fails for network reasons (not a server-side
+// validation error), queues it instead of surfacing a dead-end error.
+// Returns {ok:true, data} on success, or {ok:false, queued:true} if it
+// was queued, or {ok:false, error} if it's a real (non-network) error.
+async function fetchOrQueue(url, kind, label, clientId){
+  try{
+    const res = await fetch(url + '&clientId=' + encodeURIComponent(clientId));
+    if(!res.ok) throw new Error('Server responded with status ' + res.status);
+    const data = await res.json();
+    if(!data.success) return { ok: false, error: data.error || 'Request failed', queued: false };
+    return { ok: true, data };
+  }catch(e){
+    // A TypeError from fetch() itself (as opposed to a thrown Error
+    // above) means the request never reached the server — that's the
+    // case worth queuing for auto-retry. Reuse the SAME clientId on
+    // the retry: if this exact request actually did reach the server
+    // and only the reply was lost, Code.gs recognizes the id and
+    // avoids logging the sale/restock twice.
+    if(e instanceof TypeError || /network|fetch/i.test(e.message||'')){
+      queueAction(kind, label, url, clientId);
+      return { ok: false, queued: true, error: 'No connection — queued, will send automatically once back online.' };
+    }
+    return { ok: false, queued: false, error: e.message || 'Request failed' };
+  }
+}
+
+async function flushPendingQueue(silent){
+  let queue = getPendingQueue();
+  if(queue.length === 0) return;
+  const stillPending = [];
+  let succeeded = 0;
+  for(const action of queue){
+    try{
+      const res = await fetch(action.url + '&clientId=' + encodeURIComponent(action.id));
+      if(!res.ok) throw new Error('status ' + res.status);
+      const data = await res.json();
+      if(data.success) { succeeded++; continue; }
+      // A real validation error (not a network failure) — drop it
+      // from the queue rather than retrying forever, but keep it
+      // visible so staff know it needs manual attention.
+      action.error = data.error || 'Failed';
+      stillPending.push(action);
+    }catch(e){
+      stillPending.push(action); // still offline / still failing — keep queued
+    }
+  }
+  savePendingQueue(stillPending);
+  renderPendingBanner();
+  if(succeeded > 0 && !silent) loadData();
+}
+
+function renderPendingBanner(){
+  const queue = getPendingQueue();
+  const el = document.getElementById('pendingBanner');
+  if(queue.length === 0){ el.classList.remove('active'); el.innerHTML = ''; return; }
+  el.classList.add('active');
+  el.innerHTML = `<b>&#9203; ${queue.length} action${queue.length>1?'s':''} waiting to sync</b> — saved on this device, will send automatically once you're back online.` +
+    queue.map(a => `<div class="pending-item"><span>${a.label}</span><span style="color:var(--muted);font-family:'Space Mono',monospace">${new Date(a.queuedAt).toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit'})}${a.error?' — '+a.error:''}</span></div>`).join('') +
+    `<div class="pending-actions"><button class="btn" style="background:var(--teal);color:#0a0a0a" onclick="flushPendingQueue(false)">RETRY NOW</button></div>`;
+}
+
+function updateConnStatus(){
+  const el = document.getElementById('connStatus');
+  if(navigator.onLine){
+    el.textContent = '● online';
+    el.className = 'conn-status online';
+  }else{
+    el.textContent = '● offline';
+    el.className = 'conn-status offline';
+  }
+}
+window.addEventListener('online', () => { updateConnStatus(); flushPendingQueue(false); });
+window.addEventListener('offline', updateConnStatus);
+
+
 function showApiError(msg){
   const el = document.getElementById('errorBanner');
   el.innerHTML = "<b>&#9888; Dashboard can't reach the sheet:</b> " + msg +
@@ -254,6 +388,9 @@ function clearApiError(){
 }
 
 async function loadData(){
+  updateConnStatus();
+  renderPendingBanner();
+  if(navigator.onLine) flushPendingQueue(true);
   document.getElementById('lastRefresh').textContent = 'Refreshing...';
   try{
     const res = await fetch(API_URL + '?action=getBarData&t=' + Date.now());
@@ -278,7 +415,7 @@ async function loadData(){
     renderQuickSellMenu();
   }catch(e){
     document.getElementById('lastRefresh').textContent = 'Offline — see message above';
-    showApiError(e.message || 'Could not load data (unknown error).');
+    showApiError(e.message || 'Could not load data (unknown error). If you have no internet right now, use the Search & Sell sheet directly — it works without this dashboard.');
     console.log('Load error:', e);
   }
 }
@@ -551,23 +688,29 @@ async function submitRestock(){
   if(!item || !qtyAdded){ resultEl.innerHTML = '<span style="color:var(--red)">Item name and quantity are required.</span>'; return; }
   if(!restockedBy){ resultEl.innerHTML = '<span style="color:var(--red)">Pick who is restocking from the dropdown.</span>'; return; }
   resultEl.innerHTML = 'Saving...';
-  try{
-    let url = API_URL + '?action=addBarStock&item=' + encodeURIComponent(item) + '&qtyAdded=' + encodeURIComponent(qtyAdded) + '&restockedBy=' + encodeURIComponent(restockedBy);
-    if(parLevel) url += '&parLevel=' + encodeURIComponent(parLevel);
-    if(costPerUnit) url += '&costPerUnit=' + encodeURIComponent(costPerUnit);
-    url += '&t=' + Date.now();
-    const res = await fetch(url);
-    if(!res.ok){ throw new Error('Server responded with status ' + res.status); }
-    const data = await res.json();
-    if(!data.success) throw new Error(data.error||'Could not restock');
+  let url = API_URL + '?action=addBarStock&item=' + encodeURIComponent(item) + '&qtyAdded=' + encodeURIComponent(qtyAdded) + '&restockedBy=' + encodeURIComponent(restockedBy);
+  if(parLevel) url += '&parLevel=' + encodeURIComponent(parLevel);
+  if(costPerUnit) url += '&costPerUnit=' + encodeURIComponent(costPerUnit);
+  url += '&t=' + Date.now();
+  const clientId = genClientId();
+  const label = `Restock: +${qtyAdded} ${item} (${restockedBy})`;
+  const result = await fetchOrQueue(url, 'restock', label, clientId);
+  if(result.ok){
+    const data = result.data;
     resultEl.innerHTML = `<span class="flash">&#10003; ${item} — new qty: ${data.newQty}${data.newItem?' (new item created)':''} · logged under ${data.restockedBy} at ${data.timestamp}</span>`;
     document.getElementById('restockItem').value = '';
     document.getElementById('restockQty').value = '';
     document.getElementById('restockPar').value = '';
     document.getElementById('restockCost').value = '';
     loadData();
-  }catch(e){
-    resultEl.innerHTML = '<span style="color:var(--red)">' + (e.message||'Error') + '</span>';
+  }else if(result.queued){
+    resultEl.innerHTML = '<span style="color:var(--teal)">&#9203; ' + result.error + ' Meanwhile, you can restock directly in the Bar Stock sheet if this is urgent.</span>';
+    document.getElementById('restockItem').value = '';
+    document.getElementById('restockQty').value = '';
+    document.getElementById('restockPar').value = '';
+    document.getElementById('restockCost').value = '';
+  }else{
+    resultEl.innerHTML = '<span style="color:var(--red)">' + result.error + '</span>';
   }
 }
 
@@ -673,16 +816,25 @@ function openQuickSellPanel(itemName){
   panel.innerHTML = `
     <div class="qs-title">&#9889; ${itemName} — &#8373;${menuItem?menuItem.price.toFixed(2):'—'} each</div>
     <div class="qs-field-grid">
-      <input class="search-input" id="qsQty" type="number" min="1" value="1" placeholder="Qty" style="margin:0">
-      <select class="select-input" id="qsStaff" style="margin:0">
-        <option value="">Served by... (required)</option>
-        ${staff.map(s=>`<option value="${s.initials}">${s.initials}${s.name?' — '+s.name:''}</option>`).join('')}
-      </select>
+      <div>
+        <div class="qs-label">Qty</div>
+        <input class="search-input" id="qsQty" type="number" min="1" value="1" placeholder="Qty" style="margin:0">
+      </div>
+      <div>
+        <div class="qs-label">Served by (required)</div>
+        <select class="select-input" id="qsStaff" style="margin:0">
+          <option value="">Select staff...</option>
+          ${staff.map(s=>`<option value="${s.initials}">${s.initials}${s.name?' — '+s.name:''}</option>`).join('')}
+        </select>
+      </div>
     </div>
-    <input class="search-input" id="qsCustomer" placeholder="Customer phone/ID (optional — leave blank for walk-in)" style="margin-top:8px">
-    <input class="search-input" id="qsNewName" placeholder="New customer name (only if the ID above is new)">
+    <div class="qs-label" style="margin-top:8px">Customer phone or ID (optional — leave blank for walk-in)</div>
+    <input class="search-input" id="qsCustomer" placeholder="e.g. 0241234567 or THWGH1" style="margin:0 0 10px">
+    <div class="qs-label">New customer name (only needed if the ID/phone above is new)</div>
+    <input class="search-input" id="qsNewName" placeholder="e.g. Ama Mensah" style="margin:0 0 10px">
+    <div class="qs-label">Payment method (optional)</div>
     <select class="select-input" id="qsPayment">
-      <option value="">Payment method (optional)</option>
+      <option value="">Select payment...</option>
       <option>Cash</option><option>Mobile Money</option><option>Card</option><option>Room Charge</option>
     </select>
     <div class="restock-grid">
@@ -711,23 +863,26 @@ async function submitQuickSell(){
   if(!staffInitials){ resultEl.innerHTML = '<span style="color:var(--red)">Pick who is serving.</span>'; return; }
   if(!qty || qty <= 0){ resultEl.innerHTML = '<span style="color:var(--red)">Enter a quantity.</span>'; return; }
   resultEl.innerHTML = 'Processing sale...';
-  try{
-    let url = API_URL + '?action=quickSell&item=' + encodeURIComponent(item) + '&qty=' + encodeURIComponent(qty) + '&staffInitials=' + encodeURIComponent(staffInitials) + '&payment=' + encodeURIComponent(payment);
-    if(custQuery) url += '&custQuery=' + encodeURIComponent(custQuery);
-    if(newCustomerName) url += '&newCustomerName=' + encodeURIComponent(newCustomerName);
-    url += '&t=' + Date.now();
-    const res = await fetch(url);
-    if(!res.ok){ throw new Error('Server responded with status ' + res.status); }
-    const data = await res.json();
-    if(!data.success) throw new Error(data.error||'Could not log sale');
+  let url = API_URL + '?action=quickSell&item=' + encodeURIComponent(item) + '&qty=' + encodeURIComponent(qty) + '&staffInitials=' + encodeURIComponent(staffInitials) + '&payment=' + encodeURIComponent(payment);
+  if(custQuery) url += '&custQuery=' + encodeURIComponent(custQuery);
+  if(newCustomerName) url += '&newCustomerName=' + encodeURIComponent(newCustomerName);
+  url += '&t=' + Date.now();
+  const clientId = genClientId();
+  const label = `Sale: ${qty} x ${item} (${staffInitials})`;
+  const result = await fetchOrQueue(url, 'quickSell', label, clientId);
+  if(result.ok){
+    const data = result.data;
     let msg = `<span class="flash">&#10003; ${data.qty} x ${data.item} — &#8373;${data.lineTotal.toFixed(2)}`;
     if(data.custId && data.custId !== '—') msg += ' · ' + data.custId + (data.pointsNow!==null?' ('+data.pointsNow+' pts)':'');
     msg += ' · served by ' + data.staff + '</span>';
     if(data.lowStockNames && data.lowStockNames.length) msg += `<br><span style="color:var(--red)">&#9888; Low stock: ${data.lowStockNames.join(', ')}</span>`;
     resultEl.innerHTML = msg;
     setTimeout(()=>{ cancelQuickSell(); loadData(); }, 1800);
-  }catch(e){
-    resultEl.innerHTML = '<span style="color:var(--red)">' + (e.message||'Error') + '</span>';
+  }else if(result.queued){
+    resultEl.innerHTML = '<span style="color:var(--teal)">&#9203; ' + result.error + ' Meanwhile, you can ring this up in the Search &amp; Sell sheet directly, or just note it on paper and let this queue send once you\'re back online — don\'t do both.</span>';
+    setTimeout(()=>{ cancelQuickSell(); }, 3500);
+  }else{
+    resultEl.innerHTML = '<span style="color:var(--red)">' + result.error + '</span>';
   }
 }
 
