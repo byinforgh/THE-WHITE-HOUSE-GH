@@ -82,6 +82,7 @@ tr.low-row{background:#1a0a0a;}
 .select-input{appearance:auto;}
 .btn{background:var(--gold);color:var(--black);border:none;padding:10px 18px;border-radius:5px;cursor:pointer;font-size:12px;font-weight:800;letter-spacing:1px;font-family:'Syne',sans-serif;width:100%;}
 .btn:hover{background:var(--gold-dim);}
+.btn:disabled{opacity:0.5;cursor:not-allowed;}
 .empty{text-align:center;padding:24px;color:var(--muted);font-size:12px;}
 .loading{text-align:center;padding:24px;color:var(--muted);font-size:12px;font-family:'Space Mono',monospace;}
 .customer-result{background:var(--surface);border:1px solid var(--teal);border-radius:6px;padding:12px 14px;margin-top:10px;font-size:12px;line-height:1.7;display:none;}
@@ -116,17 +117,33 @@ tr.low-row{background:#1a0a0a;}
 .error-banner b{color:var(--gold);}
 .flash{color:var(--green);}
 .quick-sell-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:8px;max-height:280px;overflow-y:auto;margin-top:4px;}
-.quick-sell-item{background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:10px 12px;cursor:pointer;transition:border-color .15s;text-align:left;}
+.quick-sell-item{background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:10px 12px;cursor:pointer;transition:border-color .15s;text-align:left;display:flex;flex-direction:column;gap:2px;}
 .quick-sell-item:hover{border-color:var(--gold);}
-.quick-sell-item.selected{border-color:var(--gold);background:#1e1706;}
-.quick-sell-item .qs-name{font-size:12px;font-weight:700;line-height:1.3;}
-.quick-sell-item .qs-price{font-size:11px;color:var(--gold);font-family:'Space Mono',monospace;margin-top:4px;}
-.quick-sell-item .qs-cat{font-size:9px;color:var(--muted);margin-top:2px;}
+.quick-sell-item.in-cart{border-color:var(--gold);background:#1e1706;}
+.quick-sell-item .qs-name{font-size:15px;font-weight:800;line-height:1.25;color:var(--text);}
+.quick-sell-item .qs-price{font-size:11px;color:var(--gold-dim);font-family:'Space Mono',monospace;margin-top:3px;}
+.quick-sell-item .qs-cat{font-size:9px;color:var(--muted);margin-top:1px;}
+.quick-sell-item .qs-cart-qty{position:absolute;top:6px;right:8px;background:var(--gold);color:var(--black);font-family:'Space Mono',monospace;font-weight:800;font-size:11px;border-radius:10px;padding:1px 7px;}
+.quick-sell-item{position:relative;}
 .quick-sell-panel{display:none;background:var(--surface);border:1px solid var(--gold);border-radius:8px;padding:16px;margin-top:14px;}
 .quick-sell-panel.show{display:block;}
-.quick-sell-panel .qs-title{font-size:13px;font-weight:800;color:var(--gold);margin-bottom:12px;}
+.quick-sell-panel .qs-title{font-size:13px;font-weight:800;color:var(--gold);margin-bottom:12px;display:flex;justify-content:space-between;align-items:center;}
 .qs-field-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px;}
 .qs-label{font-size:10px;font-weight:700;color:var(--text-dim);letter-spacing:0.5px;margin-bottom:4px;text-transform:uppercase;}
+.qs-warning{font-size:11px;color:var(--red);background:#2a0a0a;border:1px solid var(--red);border-radius:6px;padding:8px 10px;margin-bottom:10px;line-height:1.5;}
+.cart-list{margin-top:4px;}
+.cart-row{display:flex;align-items:center;gap:10px;background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:8px 10px;margin-bottom:6px;}
+.cart-row .cart-name{flex:1;font-size:13px;font-weight:700;min-width:0;}
+.cart-row .cart-name .cart-unit-price{display:block;font-size:10px;color:var(--muted);font-weight:400;font-family:'Space Mono',monospace;margin-top:2px;}
+.cart-qty-stepper{display:flex;align-items:center;gap:6px;}
+.cart-qty-stepper button{background:var(--border);border:none;color:var(--text);width:24px;height:24px;border-radius:5px;cursor:pointer;font-weight:800;font-size:13px;font-family:'Syne',sans-serif;line-height:1;}
+.cart-qty-stepper button:hover{background:var(--gold);color:var(--black);}
+.cart-qty-stepper span{font-family:'Space Mono',monospace;font-size:13px;width:20px;text-align:center;}
+.cart-line-total{font-family:'Space Mono',monospace;font-size:13px;color:var(--gold);width:70px;text-align:right;flex-shrink:0;}
+.cart-remove{background:none;border:none;color:var(--red);cursor:pointer;font-size:16px;line-height:1;padding:2px 4px;flex-shrink:0;}
+.cart-subtotal-row{display:flex;justify-content:space-between;align-items:center;padding:12px 4px;border-top:1px solid var(--border);margin-top:6px;font-size:14px;font-weight:800;}
+.cart-subtotal-row .cart-subtotal-value{color:var(--gold);font-family:'Space Mono',monospace;font-size:18px;}
+.cart-empty-hint{color:var(--muted);font-size:12px;padding:10px 4px;}
 .scanner-modal{display:none;position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.9);z-index:1000;align-items:center;justify-content:center;flex-direction:column;padding:20px;}
 .scanner-modal.show{display:flex;}
 .scanner-modal video{width:100%;max-width:420px;border-radius:8px;border:2px solid var(--teal);}
@@ -164,7 +181,7 @@ tr.low-row{background:#1a0a0a;}
   <div id="metricDetails"></div>
 
   <div class="card" id="quickSellCard">
-    <div class="card-title">&#9889; QUICK SELL <span style="font-weight:400;color:var(--muted);text-transform:none;letter-spacing:0">(ring up a sale without opening the sheet)</span></div>
+    <div class="card-title">&#9889; QUICK SELL <span style="font-weight:400;color:var(--muted);text-transform:none;letter-spacing:0">(ring up a sale without opening the sheet — tap items to add to cart)</span></div>
     <input class="search-input" id="quickSellSearch" placeholder="Search menu items..." oninput="renderQuickSellMenu()">
     <div class="tab-row" id="quickSellTabs"></div>
     <div class="quick-sell-grid" id="quickSellGrid"><div class="empty">Loading menu...</div></div>
@@ -413,6 +430,7 @@ async function loadData(){
     populateStockDatalist();
     renderQuickSellTabs();
     renderQuickSellMenu();
+    renderQuickSellPanel();
   }catch(e){
     document.getElementById('lastRefresh').textContent = 'Offline — see message above';
     showApiError(e.message || 'Could not load data (unknown error). If you have no internet right now, use the Search & Sell sheet directly — it works without this dashboard.');
@@ -526,9 +544,14 @@ function renderStockTabs(){
     {key:'Low Stock', label:'Low Stock', count: lowCount},
     ...cats.map(c => ({key:c, label:c, count: counts[c]}))
   ];
-  document.getElementById('stockTabs').innerHTML = tabs.map(t =>
-    `<button class="tab-pill ${activeStockCategory===t.key?'active':''}" onclick="setStockCategory('${t.key.replace(/'/g,"\\'")}')">${t.label}<span class="tab-count">${t.count}</span></button>`
-  ).join('');
+  document.getElementById('stockTabs').innerHTML = '';
+  tabs.forEach(t => {
+    const btn = document.createElement('button');
+    btn.className = 'tab-pill' + (activeStockCategory===t.key?' active':'');
+    btn.innerHTML = `${t.label}<span class="tab-count">${t.count}</span>`;
+    btn.addEventListener('click', () => setStockCategory(t.key));
+    document.getElementById('stockTabs').appendChild(btn);
+  });
 }
 
 function setStockCategory(cat){
@@ -768,10 +791,25 @@ function scanLoop(){
 }
 
 // =====================
-// v4.4 — QUICK SELL
+// v4.6 — QUICK SELL, rebuilt as a multi-item CART
+// -----------------------------------------------
+// Changes from v4.4/v4.5:
+//  - Tapping a menu tile now ADDS it to a cart instead of opening a
+//    single-item panel. Tap it again (or use the +/- steppers in the
+//    cart) to change quantity.
+//  - The cart shows a running subtotal, and one shared Staff/
+//    Customer/Payment panel is used to check the whole cart out at
+//    once — not one prompt per item.
+//  - Menu tiles are built with real DOM nodes + addEventListener and
+//    a data-item attribute (not string-escaped onclick="..."), which
+//    removes an entire class of "clicked X but it rang up Y" bugs
+//    caused by quote-escaping mismatches in item names.
+//  - The staff dropdown now fails LOUDLY if barData.staff has no
+//    usable entries, instead of silently rendering an empty <select>
+//    that just looks like nothing happened when tapped.
 // =====================
 let quickSellCategory = 'All';
-let quickSellSelectedItem = null;
+let cart = {}; // itemName -> qty
 
 function renderQuickSellTabs(){
   const menu = barData.menu || [];
@@ -780,9 +818,15 @@ function renderQuickSellTabs(){
   const cats = Object.keys(counts).sort((a,b)=>counts[b]-counts[a]);
   if(!cats.includes(quickSellCategory) && quickSellCategory !== 'All') quickSellCategory = 'All';
   const tabs = [{key:'All', label:'All', count: menu.length}, ...cats.map(c=>({key:c,label:c,count:counts[c]}))];
-  document.getElementById('quickSellTabs').innerHTML = tabs.map(t =>
-    `<button class="tab-pill ${quickSellCategory===t.key?'active':''}" onclick="setQuickSellCategory('${t.key.replace(/'/g,"\\'")}')">${t.label}<span class="tab-count">${t.count}</span></button>`
-  ).join('');
+  const tabRow = document.getElementById('quickSellTabs');
+  tabRow.innerHTML = '';
+  tabs.forEach(t => {
+    const btn = document.createElement('button');
+    btn.className = 'tab-pill' + (quickSellCategory===t.key?' active':'');
+    btn.innerHTML = `${t.label}<span class="tab-count">${t.count}</span>`;
+    btn.addEventListener('click', () => setQuickSellCategory(t.key));
+    tabRow.appendChild(btn);
+  });
 }
 
 function setQuickSellCategory(cat){
@@ -791,40 +835,127 @@ function setQuickSellCategory(cat){
   renderQuickSellMenu();
 }
 
+// Builds each menu tile as a real DOM node with a data-item attribute
+// and a click listener bound to the exact item object — this is what
+// actually fixes "I tapped X but it added Y": the previous version
+// built onclick="openQuickSellPanel('...')" strings by hand, and any
+// apostrophe or odd character in an item name (or an escaping slip)
+// could make the wrong literal get passed in. Reading data-item back
+// out of the element that was actually clicked can't drift like that.
 function renderQuickSellMenu(){
   const q = (document.getElementById('quickSellSearch').value||'').toLowerCase();
   let menu = barData.menu || [];
   if(quickSellCategory !== 'All') menu = menu.filter(m => (m.category||'Other') === quickSellCategory);
   if(q) menu = menu.filter(m => m.item.toLowerCase().includes(q));
   const grid = document.getElementById('quickSellGrid');
+  grid.innerHTML = '';
   if(menu.length===0){ grid.innerHTML = '<div class="empty">No menu items match</div>'; return; }
-  grid.innerHTML = menu.map(m => `
-    <button class="quick-sell-item ${quickSellSelectedItem===m.item?'selected':''}" onclick="openQuickSellPanel('${m.item.replace(/'/g,"\\'")}')">
-      <div class="qs-name">${m.item}</div>
-      <div class="qs-price">&#8373;${m.price.toFixed(2)}</div>
-      <div class="qs-cat">${m.category||''}</div>
-    </button>`).join('');
+  menu.forEach(m => {
+    const btn = document.createElement('button');
+    const qtyInCart = cart[m.item] || 0;
+    btn.type = 'button';
+    btn.className = 'quick-sell-item' + (qtyInCart>0 ? ' in-cart' : '');
+    btn.dataset.item = m.item;
+    btn.innerHTML = `
+      ${qtyInCart>0 ? `<span class="qs-cart-qty">${qtyInCart}</span>` : ''}
+      <span class="qs-name"></span>
+      <span class="qs-price">&#8373;${m.price.toFixed(2)}</span>
+      <span class="qs-cat"></span>`;
+    // Set text content via properties, not innerHTML interpolation,
+    // so item names can never be misread as markup or break tile
+    // structure either — belt-and-braces alongside the data-item fix.
+    btn.querySelector('.qs-name').textContent = m.item;
+    btn.querySelector('.qs-cat').textContent = m.category || '';
+    btn.addEventListener('click', () => addToCart(m.item));
+    grid.appendChild(btn);
+  });
 }
 
-function openQuickSellPanel(itemName){
-  quickSellSelectedItem = itemName;
+function addToCart(itemName){
+  cart[itemName] = (cart[itemName]||0) + 1;
   renderQuickSellMenu();
-  const menuItem = (barData.menu||[]).find(m => m.item === itemName);
-  const staff = (barData.staff||[]).filter(s=>s.initials && s.initials.trim());
+  renderQuickSellPanel();
+}
+
+function setCartQty(itemName, qty){
+  qty = Math.max(0, Math.floor(qty) || 0);
+  if(qty <= 0){ delete cart[itemName]; }
+  else{ cart[itemName] = qty; }
+  renderQuickSellMenu();
+  renderQuickSellPanel();
+}
+
+function cartItemCount(){
+  return Object.keys(cart).reduce((n,k)=>n + (cart[k]>0?1:0), 0);
+}
+
+function cartSubtotal(){
+  const menu = barData.menu || [];
+  let total = 0;
+  Object.keys(cart).forEach(name => {
+    const m = menu.find(mm => mm.item === name);
+    if(m) total += m.price * cart[name];
+  });
+  return total;
+}
+
+// Renders the shared checkout panel: cart lines + subtotal, then
+// Staff/Customer/Payment fields, shown whenever the cart isn't empty.
+function renderQuickSellPanel(){
   const panel = document.getElementById('quickSellPanel');
+  const menu = barData.menu || [];
+  const itemNames = Object.keys(cart).filter(k => cart[k] > 0);
+
+  if(itemNames.length === 0){
+    panel.classList.remove('show');
+    panel.innerHTML = '';
+    return;
+  }
+
   panel.classList.add('show');
-  panel.innerHTML = `
-    <div class="qs-title">&#9889; ${itemName} — &#8373;${menuItem?menuItem.price.toFixed(2):'—'} each</div>
-    <div class="qs-field-grid">
-      <div>
-        <div class="qs-label">Qty</div>
-        <input class="search-input" id="qsQty" type="number" min="1" value="1" placeholder="Qty" style="margin:0">
+
+  // Preserve whatever the person already typed/picked in the panel
+  // across re-renders (e.g. after tapping +/- on a cart line).
+  const prevStaff = document.getElementById('qsStaff') ? document.getElementById('qsStaff').value : '';
+  const prevCustomer = document.getElementById('qsCustomer') ? document.getElementById('qsCustomer').value : '';
+  const prevNewName = document.getElementById('qsNewName') ? document.getElementById('qsNewName').value : '';
+  const prevPayment = document.getElementById('qsPayment') ? document.getElementById('qsPayment').value : '';
+
+  const staff = (barData.staff||[]).filter(s=>s.initials && s.initials.trim());
+  const subtotal = cartSubtotal();
+
+  const cartRowsHtml = itemNames.map(name => {
+    const m = menu.find(mm => mm.item === name);
+    const price = m ? m.price : 0;
+    const qty = cart[name];
+    return `
+    <div class="cart-row" data-cart-item="${encodeURIComponent(name)}">
+      <div class="cart-name"><span class="cart-item-name"></span><span class="cart-unit-price">&#8373;${price.toFixed(2)} each</span></div>
+      <div class="cart-qty-stepper">
+        <button type="button" class="cart-qty-dec">&minus;</button>
+        <span>${qty}</span>
+        <button type="button" class="cart-qty-inc">+</button>
       </div>
+      <div class="cart-line-total">&#8373;${(price*qty).toFixed(2)}</div>
+      <button type="button" class="cart-remove" title="Remove">&times;</button>
+    </div>`;
+  }).join('');
+
+  panel.innerHTML = `
+    <div class="qs-title"><span>&#128722; CART (${itemNames.length} item${itemNames.length>1?'s':''})</span><button type="button" class="cart-remove" id="qsClearCart" title="Clear cart" style="font-size:12px;color:var(--muted)">CLEAR</button></div>
+    <div class="cart-list" id="cartList"></div>
+    <div class="cart-subtotal-row"><span>Subtotal</span><span class="cart-subtotal-value">&#8373;${subtotal.toFixed(2)}</span></div>
+    ${staff.length===0 ? '<div class="qs-warning">&#9888; No staff with initials found in the 🧑\u200d💼 Staff sheet — the "Served by" list below will be empty. Fill in Slot/Initials on the Staff sheet, then hit Refresh.</div>' : ''}
+    <div class="qs-field-grid" style="margin-top:10px">
       <div>
         <div class="qs-label">Served by (required)</div>
-        <select class="select-input" id="qsStaff" style="margin:0">
-          <option value="">Select staff...</option>
-          ${staff.map(s=>`<option value="${s.initials}">${s.initials}${s.name?' — '+s.name:''}</option>`).join('')}
+        <select class="select-input" id="qsStaff" style="margin:0"></select>
+      </div>
+      <div>
+        <div class="qs-label">Payment method (optional)</div>
+        <select class="select-input" id="qsPayment">
+          <option value="">Select payment...</option>
+          <option>Cash</option><option>Mobile Money</option><option>Card</option><option>Room Charge</option>
         </select>
       </div>
     </div>
@@ -832,57 +963,139 @@ function openQuickSellPanel(itemName){
     <input class="search-input" id="qsCustomer" placeholder="e.g. 0241234567 or THWGH1" style="margin:0 0 10px">
     <div class="qs-label">New customer name (only needed if the ID/phone above is new)</div>
     <input class="search-input" id="qsNewName" placeholder="e.g. Ama Mensah" style="margin:0 0 10px">
-    <div class="qs-label">Payment method (optional)</div>
-    <select class="select-input" id="qsPayment">
-      <option value="">Select payment...</option>
-      <option>Cash</option><option>Mobile Money</option><option>Card</option><option>Room Charge</option>
-    </select>
     <div class="restock-grid">
-      <button class="btn" onclick="submitQuickSell()" style="margin:0">&#10003; CONFIRM SALE</button>
-      <button class="btn" onclick="cancelQuickSell()" style="margin:0;background:var(--border);color:var(--text)">CANCEL</button>
+      <button class="btn" id="qsConfirmBtn" style="margin:0">&#10003; CONFIRM SALE — &#8373;${subtotal.toFixed(2)}</button>
+      <button class="btn" id="qsCancelBtn" style="margin:0;background:var(--border);color:var(--text)">CANCEL</button>
     </div>
     <div id="qsResult" style="margin-top:8px;font-size:12px"></div>`;
-  panel.scrollIntoView({behavior:'smooth', block:'nearest'});
+
+  // Cart line HTML is static markup (numbers only); item names are
+  // inserted separately via textContent right below, never spliced
+  // into an HTML string — so an unusual character in a name can
+  // never break a row or misattribute an action to the wrong item.
+  document.getElementById('cartList').innerHTML = cartRowsHtml;
+  document.getElementById('cartList').querySelectorAll('.cart-row').forEach(row => {
+    const name = decodeURIComponent(row.dataset.cartItem);
+    row.querySelector('.cart-item-name').textContent = name;
+    row.querySelector('.cart-qty-inc').addEventListener('click', () => setCartQty(name, (cart[name]||0)+1));
+    row.querySelector('.cart-qty-dec').addEventListener('click', () => setCartQty(name, (cart[name]||0)-1));
+    row.querySelector('.cart-remove').addEventListener('click', () => setCartQty(name, 0));
+  });
+
+  // Staff dropdown — built defensively. If barData.staff is genuinely
+  // empty (e.g. Staff sheet not filled in, or fetch happened before
+  // data loaded), the warning banner above already told the person
+  // why instead of leaving a silent, unexplained empty list.
+  const staffSel = document.getElementById('qsStaff');
+  staffSel.innerHTML = '<option value="">Select staff...</option>' +
+    staff.map(s => `<option value="${s.initials}">${s.initials}${s.name?' — '+s.name:''}</option>`).join('');
+  if(staff.some(s=>s.initials===prevStaff)) staffSel.value = prevStaff;
+
+  document.getElementById('qsCustomer').value = prevCustomer;
+  document.getElementById('qsNewName').value = prevNewName;
+  const paySel = document.getElementById('qsPayment');
+  if(prevPayment) paySel.value = prevPayment;
+
+  document.getElementById('qsConfirmBtn').addEventListener('click', submitQuickSellCart);
+  document.getElementById('qsCancelBtn').addEventListener('click', cancelQuickSellCart);
+  document.getElementById('qsClearCart').addEventListener('click', clearCart);
 }
 
-function cancelQuickSell(){
-  quickSellSelectedItem = null;
-  document.getElementById('quickSellPanel').classList.remove('show');
-  document.getElementById('quickSellPanel').innerHTML = '';
+function clearCart(){
+  cart = {};
   renderQuickSellMenu();
+  renderQuickSellPanel();
 }
 
-async function submitQuickSell(){
-  const item = quickSellSelectedItem;
-  const qty = document.getElementById('qsQty').value;
+function cancelQuickSellCart(){
+  clearCart();
+}
+
+// Submits the whole cart as a sequence of quickSell calls (the
+// backend's processSale_ handles one item at a time), sharing the
+// same staff/customer/payment/clientId-per-line across all of them.
+// Each line gets its own idempotency clientId so a retried/queued
+// line can't double-log independently of the others.
+async function submitQuickSellCart(){
   const staffInitials = document.getElementById('qsStaff').value;
   const custQuery = document.getElementById('qsCustomer').value.trim();
   const newCustomerName = document.getElementById('qsNewName').value.trim();
   const payment = document.getElementById('qsPayment').value;
   const resultEl = document.getElementById('qsResult');
+  const confirmBtn = document.getElementById('qsConfirmBtn');
+
+  const staff = (barData.staff||[]).filter(s=>s.initials && s.initials.trim());
+  if(staff.length === 0){
+    resultEl.innerHTML = '<span style="color:var(--red)">No staff are set up yet — add initials in the 🧑\u200d💼 Staff sheet, then Refresh before selling.</span>';
+    return;
+  }
   if(!staffInitials){ resultEl.innerHTML = '<span style="color:var(--red)">Pick who is serving.</span>'; return; }
-  if(!qty || qty <= 0){ resultEl.innerHTML = '<span style="color:var(--red)">Enter a quantity.</span>'; return; }
-  resultEl.innerHTML = 'Processing sale...';
-  let url = API_URL + '?action=quickSell&item=' + encodeURIComponent(item) + '&qty=' + encodeURIComponent(qty) + '&staffInitials=' + encodeURIComponent(staffInitials) + '&payment=' + encodeURIComponent(payment);
-  if(custQuery) url += '&custQuery=' + encodeURIComponent(custQuery);
-  if(newCustomerName) url += '&newCustomerName=' + encodeURIComponent(newCustomerName);
-  url += '&t=' + Date.now();
-  const clientId = genClientId();
-  const label = `Sale: ${qty} x ${item} (${staffInitials})`;
-  const result = await fetchOrQueue(url, 'quickSell', label, clientId);
-  if(result.ok){
-    const data = result.data;
-    let msg = `<span class="flash">&#10003; ${data.qty} x ${data.item} — &#8373;${data.lineTotal.toFixed(2)}`;
-    if(data.custId && data.custId !== '—') msg += ' · ' + data.custId + (data.pointsNow!==null?' ('+data.pointsNow+' pts)':'');
-    msg += ' · served by ' + data.staff + '</span>';
-    if(data.lowStockNames && data.lowStockNames.length) msg += `<br><span style="color:var(--red)">&#9888; Low stock: ${data.lowStockNames.join(', ')}</span>`;
-    resultEl.innerHTML = msg;
-    setTimeout(()=>{ cancelQuickSell(); loadData(); }, 1800);
-  }else if(result.queued){
-    resultEl.innerHTML = '<span style="color:var(--teal)">&#9203; ' + result.error + ' Meanwhile, you can ring this up in the Search &amp; Sell sheet directly, or just note it on paper and let this queue send once you\'re back online — don\'t do both.</span>';
-    setTimeout(()=>{ cancelQuickSell(); }, 3500);
+
+  const itemNames = Object.keys(cart).filter(k => cart[k] > 0);
+  if(itemNames.length === 0){ resultEl.innerHTML = '<span style="color:var(--red)">Cart is empty.</span>'; return; }
+
+  confirmBtn.disabled = true;
+  confirmBtn.textContent = 'Processing sale...';
+  resultEl.innerHTML = '';
+
+  const lineResults = [];
+  let anyQueued = false;
+  let firstError = null;
+
+  for(const itemName of itemNames){
+    const qty = cart[itemName];
+    let url = API_URL + '?action=quickSell&item=' + encodeURIComponent(itemName) + '&qty=' + encodeURIComponent(qty) + '&staffInitials=' + encodeURIComponent(staffInitials) + '&payment=' + encodeURIComponent(payment);
+    if(custQuery) url += '&custQuery=' + encodeURIComponent(custQuery);
+    if(newCustomerName) url += '&newCustomerName=' + encodeURIComponent(newCustomerName);
+    url += '&t=' + Date.now();
+    const clientId = genClientId();
+    const label = `Sale: ${qty} x ${itemName} (${staffInitials})`;
+    const result = await fetchOrQueue(url, 'quickSell', label, clientId);
+    lineResults.push({ itemName, qty, result });
+    if(result.queued) anyQueued = true;
+    else if(!result.ok && !firstError) firstError = result.error;
+  }
+
+  if(firstError && lineResults.every(r => !r.result.ok && !r.result.queued)){
+    resultEl.innerHTML = '<span style="color:var(--red)">' + firstError + '</span>';
+    confirmBtn.disabled = false;
+    confirmBtn.textContent = '\u2713 CONFIRM SALE — \u20b5' + cartSubtotal().toFixed(2);
+    return;
+  }
+
+  const succeeded = lineResults.filter(r => r.result.ok);
+  const queued = lineResults.filter(r => r.result.queued);
+  const failed = lineResults.filter(r => !r.result.ok && !r.result.queued);
+
+  let subtotalRung = succeeded.reduce((s,r)=>s + (r.result.data ? r.result.data.lineTotal : 0), 0);
+  let msg = '';
+  if(succeeded.length){
+    msg += `<span class="flash">&#10003; ${succeeded.length} item${succeeded.length>1?'s':''} rung up — &#8373;${subtotalRung.toFixed(2)} · served by ${staffInitials}</span><br>`;
+    const lastWithCust = succeeded.slice().reverse().find(r => r.result.data.custId && r.result.data.custId !== '—');
+    if(lastWithCust) msg += `${lastWithCust.result.data.custId}${lastWithCust.result.data.pointsNow!==null ? ' ('+lastWithCust.result.data.pointsNow+' pts)':''}<br>`;
+    const lowStockSet = new Set();
+    succeeded.forEach(r => (r.result.data.lowStockNames||[]).forEach(n=>lowStockSet.add(n)));
+    if(lowStockSet.size) msg += `<span style="color:var(--red)">&#9888; Low stock: ${Array.from(lowStockSet).join(', ')}</span><br>`;
+  }
+  if(queued.length){
+    msg += `<span style="color:var(--teal)">&#9203; ${queued.length} item${queued.length>1?'s':''} queued (no connection) — will send automatically once back online.</span><br>`;
+  }
+  if(failed.length){
+    msg += `<span style="color:var(--red)">${failed.length} item${failed.length>1?'s':''} failed: ${failed.map(f=>f.itemName+' ('+f.result.error+')').join('; ')}</span>`;
+  }
+  resultEl.innerHTML = msg;
+
+  if(failed.length === 0){
+    setTimeout(()=>{ clearCart(); loadData(); }, queued.length ? 3200 : 1800);
   }else{
-    resultEl.innerHTML = '<span style="color:var(--red)">' + result.error + '</span>';
+    // Remove the lines that actually went through (or got queued) so
+    // the person can retry just what's left, instead of re-selling
+    // items that already succeeded.
+    lineResults.forEach(r => { if(r.result.ok || r.result.queued) delete cart[r.itemName]; });
+    confirmBtn.disabled = false;
+    confirmBtn.textContent = '\u2713 CONFIRM SALE — \u20b5' + cartSubtotal().toFixed(2);
+    renderQuickSellMenu();
+    renderQuickSellPanel();
   }
 }
 
