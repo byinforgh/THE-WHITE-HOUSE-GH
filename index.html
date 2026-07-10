@@ -205,7 +205,7 @@ async function lookupCustomer(){
     const data = await res.json();
     if(!data.success) throw new Error(data.error||'Lookup failed');
     if(!data.found){
-      resultEl.innerHTML = 'No customer found with that number — they\\'ll be registered next time they order.';
+      resultEl.innerHTML = "No customer found with that number — they'll be registered next time they order.";
     }else{
       resultEl.innerHTML = `<b>${data.custId}</b> — ${data.name}<br>Phone: ${data.phone}<br>Total visits: ${data.totalVisits}<br>Last visit: ${data.lastVisit||'—'}`;
     }
