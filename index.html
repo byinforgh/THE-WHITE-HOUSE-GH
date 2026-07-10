@@ -1,7 +1,14 @@
 <!DOCTYPE html>
 <html lang="en">
 <!--
-  THE WHITE HOUSE GH — BAR DASHBOARD (v4.6)
+  THE WHITE HOUSE GH — BAR DASHBOARD (v4.8)
+  FIX applied: EXPECTED_BACKEND_VERSION was hardcoded to '4.7' while
+  Code.gs (correctly deployed) reports '4.8'. That mismatch was the
+  ONLY reason the red "Backend is not up to date" banner was showing —
+  your deployment was fine the whole time. Updated the constant below
+  to '4.8' so the banner now correctly stays hidden when the backend
+  matches.
+
   New in v4.6: version-mismatch detector. The header now shows the
   backend's reported version next to "Updated:". If Code.gs hasn't
   actually been redeployed (still serving an older version, or an
@@ -290,10 +297,11 @@ tr.low-row{background:#1a0a0a;}
 // live at this same URL.
 const API_URL = 'https://script.google.com/macros/s/AKfycbyycYKCEtRchk0eToXIlMLgs3RmWIsKuUppD3UprPO8zLi9N5a9PIgn9uN4IKeip24E/exec';
 
-// v4.6: the version this dashboard.html was built to work with. If
+// v4.8: the version this dashboard.html was built to work with. If
 // the backend reports anything else (or nothing), that's proof the
-// live deployment is stale — see renderVersionBanner().
-const EXPECTED_BACKEND_VERSION = '4.7';
+// live deployment is stale — see renderVersionBanner(). MUST match
+// BACKEND_VERSION in Code.gs.
+const EXPECTED_BACKEND_VERSION = '4.8';
 
 let barData = {stock: [], todayOrders: [], staff: [], topSellers: [], staleStock: [], restockLog: [], revenueByPayment: []};
 let activeStockCategory = 'All';
