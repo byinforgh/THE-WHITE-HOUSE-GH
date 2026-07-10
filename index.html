@@ -57,6 +57,22 @@ tr.low-row{background:#1a0a0a;}
 .staff-card .staff-initials{color:var(--purple);font-weight:800;font-family:'Space Mono',monospace;font-size:13px;}
 .staff-card .staff-name{font-size:13px;font-weight:700;margin-top:2px;}
 .staff-card .staff-meta{font-size:11px;color:var(--text-dim);margin-top:6px;line-height:1.5;}
+.tab-row{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:12px;}
+.tab-pill{background:var(--surface);border:1px solid var(--border);color:var(--text-dim);padding:7px 14px;border-radius:20px;font-size:11px;font-weight:700;letter-spacing:0.5px;cursor:pointer;font-family:'Syne',sans-serif;transition:all .15s;}
+.tab-pill:hover{border-color:var(--gold);color:var(--text);}
+.tab-pill.active{background:var(--gold);color:var(--black);border-color:var(--gold);}
+.tab-pill .tab-count{opacity:0.7;margin-left:4px;}
+.rank-row{display:flex;align-items:center;gap:12px;padding:9px 4px;border-bottom:1px solid #1a1a1a;}
+.rank-row:last-child{border-bottom:none;}
+.rank-num{font-family:'Space Mono',monospace;font-weight:800;font-size:13px;color:var(--muted);width:20px;flex-shrink:0;}
+.rank-row:nth-child(1) .rank-num{color:var(--gold);}
+.rank-row:nth-child(2) .rank-num{color:#c9c9c9;}
+.rank-row:nth-child(3) .rank-num{color:#c9861a;}
+.rank-info{flex:1;min-width:0;}
+.rank-name{font-size:12px;font-weight:700;}
+.rank-sub{font-size:10px;color:var(--muted);font-family:'Space Mono',monospace;margin-top:2px;}
+.rank-value{font-family:'Space Mono',monospace;font-weight:700;font-size:12px;color:var(--teal);flex-shrink:0;}
+.rank-value.stale{color:var(--red);}
 </style>
 </head>
 <body>
@@ -85,8 +101,8 @@ tr.low-row{background:#1a0a0a;}
     </div>
     <div>
       <div class="card">
-        <div class="card-title">&#128100; CUSTOMER LOOKUP</div>
-        <input class="search-input" id="custPhoneInput" placeholder="Enter customer number..." onkeydown="if(event.key==='Enter')lookupCustomer()">
+        <div class="card-title">&#128100; CUSTOMER LOOKUP <span style="font-weight:400;color:var(--muted);text-transform:none;letter-spacing:0">(so staff can check points/history without opening the sheet)</span></div>
+        <input class="search-input" id="custPhoneInput" placeholder="Phone number, or ID like THWGH1 / GH1 / 1" onkeydown="if(event.key==='Enter')lookupCustomer()">
         <button class="btn" onclick="lookupCustomer()">LOOK UP</button>
         <div class="customer-result" id="customerResult"></div>
       </div>
@@ -104,15 +120,27 @@ tr.low-row{background:#1a0a0a;}
     </div>
   </div>
 
+  <div class="two-col">
+    <div class="card">
+      <div class="card-title">&#128293; TOP SELLERS <span style="font-weight:400;color:var(--muted);text-transform:none;letter-spacing:0">(all-time, by quantity sold)</span></div>
+      <div id="topSellersBody"><div class="empty">Loading...</div></div>
+    </div>
+    <div class="card">
+      <div class="card-title">&#8987; LONGEST ON THE SHELF <span style="font-weight:400;color:var(--muted);text-transform:none;letter-spacing:0">(never/least recently restocked)</span></div>
+      <div id="staleStockBody"><div class="empty">Loading...</div></div>
+    </div>
+  </div>
+
   <div class="card">
     <div class="card-title">&#129489;&#8205;&#128188; STAFF ON DUTY <span style="font-weight:400;color:var(--muted);text-transform:none;letter-spacing:0">(edit names/hours in the 🧑‍💼 Staff sheet)</span></div>
     <div class="staff-grid" id="staffGrid"><div class="empty">Loading staff...</div></div>
   </div>
 
   <div class="card">
-    <div class="card-title">&#128230; BAR STOCK — ALL ITEMS <span style="font-weight:400;color:var(--muted);text-transform:none;letter-spacing:0">(red rows = at or below par level)</span></div>
+    <div class="card-title">&#128230; BAR STOCK — ALL ITEMS <span style="font-weight:400;color:var(--muted);text-transform:none;letter-spacing:0">(red rows = at or below par level — click a tab to filter by category)</span></div>
+    <div class="tab-row" id="stockTabs"></div>
     <input class="search-input" id="stockSearch" placeholder="Search stock..." oninput="renderStock()">
-    <div class="scroll-table"><table><thead><tr><th>ITEM</th><th>UNIT</th><th>CURRENT QTY</th><th>PAR LEVEL</th><th>COST/UNIT</th><th>LAST RESTOCKED</th></tr></thead><tbody id="stockBody"></tbody></table></div>
+    <div class="scroll-table"><table><thead><tr><th>ITEM</th><th>CATEGORY</th><th>UNIT</th><th>CURRENT QTY</th><th>PAR LEVEL</th><th>COST/UNIT</th><th>LAST RESTOCKED</th></tr></thead><tbody id="stockBody"></tbody></table></div>
   </div>
 </div>
 
@@ -120,7 +148,8 @@ tr.low-row{background:#1a0a0a;}
 // Fill this in once the Bar system's Apps Script web app is deployed
 // (Deploy > New deployment > Web app > copy the /exec URL).
 const API_URL = 'https://script.google.com/macros/s/AKfycbyycYKCEtRchk0eToXIlMLgs3RmWIsKuUppD3UprPO8zLi9N5a9PIgn9uN4IKeip24E/exec';
-let barData = {stock: [], todayOrders: [], staff: []};
+let barData = {stock: [], todayOrders: [], staff: [], topSellers: [], staleStock: []};
+let activeStockCategory = 'All';
 
 async function loadData(){
   document.getElementById('lastRefresh').textContent = 'Refreshing...';
@@ -133,8 +162,11 @@ async function loadData(){
     renderMetrics();
     renderLowStockBanner();
     renderOrders();
+    renderStockTabs();
     renderStock();
     renderStaff();
+    renderTopSellers();
+    renderStaleStock();
   }catch(e){
     document.getElementById('lastRefresh').textContent = 'Offline — check connection';
     console.log('Load error:', e.message);
@@ -167,19 +199,77 @@ function renderOrders(){
   }).join('');
 }
 
+// Clickable category tabs — filters the Bar Stock table below.
+// Categories are derived on the backend from Bar Recipes; anything
+// not sold as its own line item is grouped under "Bar Ingredient".
+function renderStockTabs(){
+  const stock = barData.stock || [];
+  const counts = {};
+  stock.forEach(s => { counts[s.category] = (counts[s.category]||0) + 1; });
+  const cats = Object.keys(counts).sort((a,b)=>counts[b]-counts[a]);
+  if(!cats.includes(activeStockCategory) && activeStockCategory !== 'All' && activeStockCategory !== 'Low Stock'){
+    activeStockCategory = 'All';
+  }
+  const lowCount = stock.filter(s=>s.lowStock).length;
+  const tabs = [
+    {key:'All', label:'All', count: stock.length},
+    {key:'Low Stock', label:'Low Stock', count: lowCount},
+    ...cats.map(c => ({key:c, label:c, count: counts[c]}))
+  ];
+  document.getElementById('stockTabs').innerHTML = tabs.map(t =>
+    `<button class="tab-pill ${activeStockCategory===t.key?'active':''}" onclick="setStockCategory('${t.key.replace(/'/g,"\\'")}')">${t.label}<span class="tab-count">${t.count}</span></button>`
+  ).join('');
+}
+
+function setStockCategory(cat){
+  activeStockCategory = cat;
+  renderStockTabs();
+  renderStock();
+}
+
 function renderStock(){
   const q = (document.getElementById('stockSearch').value||'').toLowerCase();
-  const stock = (barData.stock||[]).filter(s=>!q||s.item.toLowerCase().includes(q));
-  if(stock.length===0){ document.getElementById('stockBody').innerHTML = '<tr><td colspan="6" class="empty">No stock items match</td></tr>'; return; }
+  let stock = (barData.stock||[]);
+  if(activeStockCategory === 'Low Stock'){
+    stock = stock.filter(s=>s.lowStock);
+  } else if(activeStockCategory !== 'All'){
+    stock = stock.filter(s=>s.category === activeStockCategory);
+  }
+  stock = stock.filter(s=>!q||s.item.toLowerCase().includes(q));
+  if(stock.length===0){ document.getElementById('stockBody').innerHTML = '<tr><td colspan="7" class="empty">No stock items match</td></tr>'; return; }
   document.getElementById('stockBody').innerHTML = stock.map(s=>`
     <tr class="${s.lowStock?'low-row':''}">
       <td>${s.item}</td>
+      <td class="badge-unit">${s.category}</td>
       <td class="badge-unit">${s.unit}</td>
       <td style="font-family:'Space Mono',monospace">${s.currentQty}</td>
       <td style="font-family:'Space Mono',monospace">${s.parLevel}</td>
       <td style="font-family:'Space Mono',monospace">&#8373;${s.costPerUnit.toFixed(2)}</td>
       <td style="font-size:11px;color:var(--text-dim)">${s.lastRestocked||'—'}</td>
     </tr>`).join('');
+}
+
+function renderTopSellers(){
+  const top = barData.topSellers || [];
+  const el = document.getElementById('topSellersBody');
+  if(top.length===0){ el.innerHTML = '<div class="empty">No sales logged yet.</div>'; return; }
+  el.innerHTML = top.map((s,i)=>`
+    <div class="rank-row">
+      <div class="rank-num">${i+1}</div>
+      <div class="rank-info"><div class="rank-name">${s.item}</div><div class="rank-sub">&#8373;${s.revenue.toFixed(2)} total revenue</div></div>
+      <div class="rank-value">${s.qty} sold</div>
+    </div>`).join('');
+}
+
+function renderStaleStock(){
+  const stale = barData.staleStock || [];
+  const el = document.getElementById('staleStockBody');
+  if(stale.length===0){ el.innerHTML = '<div class="empty">No stock items yet.</div>'; return; }
+  el.innerHTML = stale.map(s=>`
+    <div class="rank-row">
+      <div class="rank-info"><div class="rank-name">${s.item}</div><div class="rank-sub">${s.currentQty} ${s.unit} on hand · ${s.category}</div></div>
+      <div class="rank-value stale">${s.lastRestocked || 'never restocked'}</div>
+    </div>`).join('');
 }
 
 function renderStaff(){
@@ -194,20 +284,22 @@ function renderStaff(){
     </div>`).join('');
 }
 
+// Accepts a phone number OR a customer ID in any short form
+// (THWGH1 / GH1 / 1) — matched flexibly on the backend.
 async function lookupCustomer(){
-  const phone = document.getElementById('custPhoneInput').value.trim();
+  const query = document.getElementById('custPhoneInput').value.trim();
   const resultEl = document.getElementById('customerResult');
-  if(!phone){ resultEl.classList.remove('show'); return; }
+  if(!query){ resultEl.classList.remove('show'); return; }
   resultEl.classList.add('show');
   resultEl.innerHTML = 'Looking up...';
   try{
-    const res = await fetch(API_URL + '?action=getCustomer&phone=' + encodeURIComponent(phone) + '&t=' + Date.now());
+    const res = await fetch(API_URL + '?action=getCustomer&query=' + encodeURIComponent(query) + '&t=' + Date.now());
     const data = await res.json();
     if(!data.success) throw new Error(data.error||'Lookup failed');
     if(!data.found){
-      resultEl.innerHTML = "No customer found with that number — they'll be registered next time they order.";
+      resultEl.innerHTML = "No customer found matching that — they'll be registered next time they order.";
     }else{
-      resultEl.innerHTML = `<b>${data.custId}</b> — ${data.name}<br>Phone: ${data.phone}<br>Total visits: ${data.totalVisits}<br>Last visit: ${data.lastVisit||'—'}`;
+      resultEl.innerHTML = `<b>${data.custId}</b> — ${data.name}<br>Phone: ${data.phone||'—'}<br>Loyalty points: ${data.loyaltyPoints}<br>Total visits: ${data.totalVisits}<br>Last visit: ${data.lastVisit||'—'}`;
     }
   }catch(e){
     resultEl.innerHTML = 'Connection error — try again.';
