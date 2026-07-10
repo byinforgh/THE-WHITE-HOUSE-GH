@@ -23,14 +23,23 @@ body{background:var(--black);color:var(--text);font-family:'Syne',sans-serif;min
 .low-stock-banner.active{display:block;}
 .low-stock-banner-title{color:var(--red);font-weight:800;font-size:13px;letter-spacing:1px;margin-bottom:8px;}
 .low-stock-pill{display:inline-block;background:#3a1010;border:1px solid var(--red);color:#ffb3b3;padding:5px 12px;border-radius:20px;font-size:12px;margin:3px 4px 0 0;font-family:'Space Mono',monospace;}
-.metrics-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px;margin-bottom:24px;}
-.metric-card{background:var(--card);border:1px solid var(--border);border-radius:8px;padding:18px;position:relative;overflow:hidden;}
+.metrics-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px;margin-bottom:8px;}
+.metric-card{background:var(--card);border:1px solid var(--border);border-radius:8px;padding:18px;position:relative;overflow:hidden;cursor:pointer;transition:border-color .15s,transform .1s;}
+.metric-card:hover{border-color:var(--muted);}
+.metric-card.expanded{border-color:var(--gold);}
 .metric-card::before{content:'';position:absolute;top:0;left:0;right:0;height:2px;}
 .metric-card.gold::before{background:var(--gold);}.metric-card.teal::before{background:var(--teal);}.metric-card.red::before{background:var(--red);}.metric-card.green::before{background:var(--green);}
-.metric-label{font-size:10px;font-weight:700;letter-spacing:2px;color:var(--muted);margin-bottom:8px;}
+.metric-label{font-size:10px;font-weight:700;letter-spacing:2px;color:var(--muted);margin-bottom:8px;display:flex;justify-content:space-between;align-items:center;}
+.metric-caret{font-size:9px;transition:transform .15s;}
+.metric-card.expanded .metric-caret{transform:rotate(180deg);}
 .metric-value{font-size:30px;font-weight:800;font-family:'Space Mono',monospace;line-height:1;}
 .metric-card.gold .metric-value{color:var(--gold);}.metric-card.teal .metric-value{color:var(--teal);}.metric-card.red .metric-value{color:var(--red);}.metric-card.green .metric-value{color:var(--green);}
 .metric-sub{font-size:11px;color:var(--text-dim);margin-top:6px;}
+.metric-detail{background:var(--card);border:1px solid var(--border);border-top:none;border-radius:0 0 8px 8px;margin-top:-14px;margin-bottom:20px;padding:14px 18px;display:none;font-size:12px;}
+.metric-detail.show{display:block;}
+.metric-detail-row{display:flex;justify-content:space-between;padding:5px 0;border-bottom:1px solid #1a1a1a;}
+.metric-detail-row:last-child{border-bottom:none;}
+.metric-detail-empty{color:var(--muted);padding:6px 0;}
 .two-col{display:grid;grid-template-columns:1.3fr 1fr;gap:16px;margin-bottom:20px;}
 @media(max-width:900px){.two-col{grid-template-columns:1fr;}}
 .card{background:var(--card);border:1px solid var(--border);border-radius:8px;padding:18px;margin-bottom:16px;}
@@ -40,8 +49,9 @@ th{text-align:left;padding:8px 10px;color:var(--muted);font-weight:700;letter-sp
 td{padding:7px 10px;border-bottom:1px solid #1a1a1a;}
 tr.low-row td{color:var(--red);}
 tr.low-row{background:#1a0a0a;}
-.search-input{background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:10px 14px;color:var(--text);font-size:13px;font-family:'Syne',sans-serif;width:100%;margin-bottom:10px;outline:none;}
-.search-input:focus{border-color:var(--gold);}
+.search-input,.select-input{background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:10px 14px;color:var(--text);font-size:13px;font-family:'Syne',sans-serif;width:100%;margin-bottom:10px;outline:none;}
+.search-input:focus,.select-input:focus{border-color:var(--gold);}
+.select-input{appearance:auto;}
 .btn{background:var(--gold);color:var(--black);border:none;padding:10px 18px;border-radius:5px;cursor:pointer;font-size:12px;font-weight:800;letter-spacing:1px;font-family:'Syne',sans-serif;width:100%;}
 .btn:hover{background:var(--gold-dim);}
 .empty{text-align:center;padding:24px;color:var(--muted);font-size:12px;}
@@ -73,6 +83,10 @@ tr.low-row{background:#1a0a0a;}
 .rank-sub{font-size:10px;color:var(--muted);font-family:'Space Mono',monospace;margin-top:2px;}
 .rank-value{font-family:'Space Mono',monospace;font-weight:700;font-size:12px;color:var(--teal);flex-shrink:0;}
 .rank-value.stale{color:var(--red);}
+.error-banner{display:none;background:#2a1a0a;border:1px solid var(--gold-dim);border-radius:8px;padding:14px 18px;margin-bottom:20px;font-size:12px;line-height:1.6;color:#ffdca8;}
+.error-banner.active{display:block;}
+.error-banner b{color:var(--gold);}
+.flash{color:var(--green);}
 </style>
 </head>
 <body>
@@ -85,12 +99,15 @@ tr.low-row{background:#1a0a0a;}
 </div>
 
 <div class="main">
+  <div class="error-banner" id="errorBanner"></div>
+
   <div class="low-stock-banner" id="lowStockBanner">
     <div class="low-stock-banner-title">&#9888; LOW STOCK — RESTOCK NEEDED</div>
     <div id="lowStockPills"></div>
   </div>
 
   <div class="metrics-grid" id="topMetrics"><div class="loading">Loading bar data</div></div>
+  <div id="metricDetails"></div>
 
   <div class="two-col">
     <div>
@@ -108,12 +125,16 @@ tr.low-row{background:#1a0a0a;}
       </div>
       <div class="card">
         <div class="card-title">&#128230; RESTOCK AN ITEM</div>
-        <input class="search-input" id="restockItem" placeholder="Item name (must match Bar Stock exactly)">
+        <input class="search-input" id="restockItem" placeholder="Item name (must match Bar Stock exactly)" list="stockItemList">
+        <datalist id="stockItemList"></datalist>
         <div class="restock-grid">
           <input class="search-input" id="restockQty" type="number" placeholder="Qty to add" style="margin:0">
           <input class="search-input" id="restockPar" type="number" placeholder="Par level (optional)" style="margin:0">
         </div>
         <input class="search-input" id="restockCost" type="number" placeholder="Cost per unit (optional)">
+        <select class="select-input" id="restockBy">
+          <option value="">Restocked by... (required)</option>
+        </select>
         <button class="btn" onclick="submitRestock()">+ ADD STOCK</button>
         <div id="restockResult" style="margin-top:8px;font-size:12px"></div>
       </div>
@@ -132,32 +153,53 @@ tr.low-row{background:#1a0a0a;}
   </div>
 
   <div class="card">
+    <div class="card-title">&#128230; RECENT RESTOCKS <span style="font-weight:400;color:var(--muted);text-transform:none;letter-spacing:0">(date, time, item, qty and who restocked it)</span></div>
+    <div class="scroll-table"><table><thead><tr><th>WHEN</th><th>ITEM</th><th>QTY ADDED</th><th>NEW QTY</th><th>RESTOCKED BY</th></tr></thead><tbody id="restockLogBody"></tbody></table></div>
+  </div>
+
+  <div class="card">
     <div class="card-title">&#129489;&#8205;&#128188; STAFF ON DUTY <span style="font-weight:400;color:var(--muted);text-transform:none;letter-spacing:0">(edit names/hours in the 🧑‍💼 Staff sheet)</span></div>
     <div class="staff-grid" id="staffGrid"><div class="empty">Loading staff...</div></div>
   </div>
 
-  <div class="card">
+  <div class="card" id="stockCard">
     <div class="card-title">&#128230; BAR STOCK — ALL ITEMS <span style="font-weight:400;color:var(--muted);text-transform:none;letter-spacing:0">(red rows = at or below par level — click a tab to filter by category)</span></div>
     <div class="tab-row" id="stockTabs"></div>
     <input class="search-input" id="stockSearch" placeholder="Search stock..." oninput="renderStock()">
-    <div class="scroll-table"><table><thead><tr><th>ITEM</th><th>CATEGORY</th><th>UNIT</th><th>CURRENT QTY</th><th>PAR LEVEL</th><th>COST/UNIT</th><th>LAST RESTOCKED</th></tr></thead><tbody id="stockBody"></tbody></table></div>
+    <div class="scroll-table"><table><thead><tr><th>ITEM</th><th>CATEGORY</th><th>UNIT</th><th>CURRENT QTY</th><th>PAR LEVEL</th><th>COST/UNIT</th><th>LAST RESTOCKED</th><th>BY</th></tr></thead><tbody id="stockBody"></tbody></table></div>
   </div>
 </div>
 
 <script>
 // Fill this in once the Bar system's Apps Script web app is deployed
-// (Deploy > New deployment > Web app > copy the /exec URL).
+// (Deploy > New deployment > Web app > copy the /exec URL). If you
+// change Code.gs later, use Deploy > Manage deployments > edit the
+// SAME deployment + "New version" — that's what makes changes go
+// live at this same URL.
 const API_URL = 'https://script.google.com/macros/s/AKfycbyycYKCEtRchk0eToXIlMLgs3RmWIsKuUppD3UprPO8zLi9N5a9PIgn9uN4IKeip24E/exec';
-let barData = {stock: [], todayOrders: [], staff: [], topSellers: [], staleStock: []};
+let barData = {stock: [], todayOrders: [], staff: [], topSellers: [], staleStock: [], restockLog: [], revenueByPayment: []};
 let activeStockCategory = 'All';
+let expandedMetric = null;
+
+function showApiError(msg){
+  const el = document.getElementById('errorBanner');
+  el.innerHTML = "<b>&#9888; Dashboard can't reach the sheet:</b> " + msg +
+    ' <br><br>Most common cause: Code.gs was edited but the deployment was not updated. In Apps Script, go to <b>Deploy &gt; Manage deployments</b>, click the pencil on the existing deployment, set Version to <b>New version</b>, and Deploy again (using "New deployment" instead creates a different URL and will not fix this one). Also confirm "Execute as: Me" and "Who has access: Anyone" are set there.';
+  el.classList.add('active');
+}
+function clearApiError(){
+  document.getElementById('errorBanner').classList.remove('active');
+}
 
 async function loadData(){
   document.getElementById('lastRefresh').textContent = 'Refreshing...';
   try{
     const res = await fetch(API_URL + '?action=getBarData&t=' + Date.now());
+    if(!res.ok){ throw new Error('Server responded with status ' + res.status); }
     const data = await res.json();
     if(!data.success) throw new Error(data.error || 'Unknown error');
     barData = data;
+    clearApiError();
     document.getElementById('lastRefresh').textContent = 'Updated: ' + new Date().toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit'});
     renderMetrics();
     renderLowStockBanner();
@@ -167,18 +209,80 @@ async function loadData(){
     renderStaff();
     renderTopSellers();
     renderStaleStock();
+    renderRestockLog();
+    populateStaffDropdowns();
+    populateStockDatalist();
   }catch(e){
-    document.getElementById('lastRefresh').textContent = 'Offline — check connection';
-    console.log('Load error:', e.message);
+    document.getElementById('lastRefresh').textContent = 'Offline — see message above';
+    showApiError(e.message || 'Could not load data (unknown error).');
+    console.log('Load error:', e);
   }
 }
 
 function renderMetrics(){
   document.getElementById('topMetrics').innerHTML = `
-    <div class="metric-card gold"><div class="metric-label">TODAY'S REVENUE</div><div class="metric-value">&#8373;${(barData.todayRevenue||0).toFixed(2)}</div><div class="metric-sub">${(barData.todayItemCount||0)} items sold</div></div>
-    <div class="metric-card teal"><div class="metric-label">ORDERS TODAY</div><div class="metric-value">${(barData.todayOrders||[]).length}</div><div class="metric-sub">logged sales</div></div>
-    <div class="metric-card red"><div class="metric-label">LOW STOCK ITEMS</div><div class="metric-value">${barData.lowStockCount||0}</div><div class="metric-sub">at or below par</div></div>
-    <div class="metric-card green"><div class="metric-label">MENU ITEMS</div><div class="metric-value">${(barData.menu||[]).length}</div><div class="metric-sub">cocktails + straight-sell</div></div>`;
+    <div class="metric-card gold" onclick="toggleMetric('revenue')">
+      <div class="metric-label">TODAY'S REVENUE <span class="metric-caret">&#9660;</span></div>
+      <div class="metric-value">&#8373;${(barData.todayRevenue||0).toFixed(2)}</div>
+      <div class="metric-sub">${(barData.todayItemCount||0)} items sold</div>
+    </div>
+    <div class="metric-card teal" onclick="toggleMetric('orders')">
+      <div class="metric-label">ORDERS TODAY <span class="metric-caret">&#9660;</span></div>
+      <div class="metric-value">${(barData.todayOrders||[]).length}</div>
+      <div class="metric-sub">logged sales</div>
+    </div>
+    <div class="metric-card red" onclick="toggleMetric('lowstock')">
+      <div class="metric-label">LOW STOCK ITEMS <span class="metric-caret">&#9660;</span></div>
+      <div class="metric-value">${barData.lowStockCount||0}</div>
+      <div class="metric-sub">at or below par</div>
+    </div>
+    <div class="metric-card green" onclick="toggleMetric('menu')">
+      <div class="metric-label">MENU ITEMS <span class="metric-caret">&#9660;</span></div>
+      <div class="metric-value">${(barData.menu||[]).length}</div>
+      <div class="metric-sub">cocktails + straight-sell</div>
+    </div>`;
+  // re-apply expanded state after a refresh, if a panel was open
+  if(expandedMetric){ renderMetricDetail(expandedMetric); }
+}
+
+function toggleMetric(key){
+  expandedMetric = (expandedMetric === key) ? null : key;
+  renderMetrics();
+  renderMetricDetail(expandedMetric);
+}
+
+function renderMetricDetail(key){
+  const cards = document.querySelectorAll('#topMetrics .metric-card');
+  cards.forEach(c => c.classList.remove('expanded'));
+  const el = document.getElementById('metricDetails');
+  if(!key){ el.innerHTML = ''; return; }
+
+  let html = '';
+  if(key === 'revenue'){
+    cards[0] && cards[0].classList.add('expanded');
+    const byPay = barData.revenueByPayment || [];
+    html = byPay.length ? byPay.map(p => `<div class="metric-detail-row"><span>${p.method}</span><span style="color:var(--gold);font-family:'Space Mono',monospace">&#8373;${p.revenue.toFixed(2)}</span></div>`).join('')
+      : '<div class="metric-detail-empty">No sales logged yet today.</div>';
+  } else if(key === 'orders'){
+    cards[1] && cards[1].classList.add('expanded');
+    const orders = barData.todayOrders || [];
+    html = orders.length ? orders.slice(0,8).map(o => `<div class="metric-detail-row"><span>${o.item} &times;${o.qty}</span><span style="color:var(--teal);font-family:'Space Mono',monospace">${o.staffInitials||'—'}</span></div>`).join('') + (orders.length>8 ? `<div class="metric-detail-empty">+ ${orders.length-8} more — see Today's Orders table.</div>` : '')
+      : '<div class="metric-detail-empty">No orders logged yet today.</div>';
+  } else if(key === 'lowstock'){
+    cards[2] && cards[2].classList.add('expanded');
+    const low = (barData.stock||[]).filter(s=>s.lowStock);
+    html = low.length ? low.slice(0,10).map(s => `<div class="metric-detail-row"><span>${s.item}</span><span style="color:var(--red);font-family:'Space Mono',monospace">${s.currentQty} / par ${s.parLevel}</span></div>`).join('') + (low.length>10 ? `<div class="metric-detail-empty">+ ${low.length-10} more — filtering stock table below.</div>` : '')
+      : '<div class="metric-detail-empty">Nothing is low right now.</div>';
+    setStockCategory('Low Stock');
+    document.getElementById('stockCard').scrollIntoView({behavior:'smooth', block:'start'});
+  } else if(key === 'menu'){
+    cards[3] && cards[3].classList.add('expanded');
+    const menu = barData.menu || [];
+    const byCat = {};
+    menu.forEach(m => { (byCat[m.category||'Other'] = byCat[m.category||'Other']||[]).push(m); });
+    html = Object.keys(byCat).sort().map(c => `<div class="metric-detail-row"><span>${c}</span><span style="color:var(--green);font-family:'Space Mono',monospace">${byCat[c].length} items</span></div>`).join('');
+  }
+  el.innerHTML = `<div class="metric-detail show">${html}</div>`;
 }
 
 function renderLowStockBanner(){
@@ -202,10 +306,15 @@ function renderOrders(){
 // Clickable category tabs — filters the Bar Stock table below.
 // Categories are derived on the backend from Bar Recipes; anything
 // not sold as its own line item is grouped under "Bar Ingredient".
+// v4.3: defensively falls back to 'Bar Ingredient' client-side too,
+// so a stale/older backend can never produce an "undefined" tab.
 function renderStockTabs(){
   const stock = barData.stock || [];
   const counts = {};
-  stock.forEach(s => { counts[s.category] = (counts[s.category]||0) + 1; });
+  stock.forEach(s => {
+    const cat = (s.category && s.category !== 'undefined') ? s.category : 'Bar Ingredient';
+    counts[cat] = (counts[cat]||0) + 1;
+  });
   const cats = Object.keys(counts).sort((a,b)=>counts[b]-counts[a]);
   if(!cats.includes(activeStockCategory) && activeStockCategory !== 'All' && activeStockCategory !== 'Low Stock'){
     activeStockCategory = 'All';
@@ -229,14 +338,14 @@ function setStockCategory(cat){
 
 function renderStock(){
   const q = (document.getElementById('stockSearch').value||'').toLowerCase();
-  let stock = (barData.stock||[]);
+  let stock = (barData.stock||[]).map(s => ({...s, category: (s.category && s.category !== 'undefined') ? s.category : 'Bar Ingredient'}));
   if(activeStockCategory === 'Low Stock'){
     stock = stock.filter(s=>s.lowStock);
   } else if(activeStockCategory !== 'All'){
     stock = stock.filter(s=>s.category === activeStockCategory);
   }
   stock = stock.filter(s=>!q||s.item.toLowerCase().includes(q));
-  if(stock.length===0){ document.getElementById('stockBody').innerHTML = '<tr><td colspan="7" class="empty">No stock items match</td></tr>'; return; }
+  if(stock.length===0){ document.getElementById('stockBody').innerHTML = '<tr><td colspan="8" class="empty">No stock items match</td></tr>'; return; }
   document.getElementById('stockBody').innerHTML = stock.map(s=>`
     <tr class="${s.lowStock?'low-row':''}">
       <td>${s.item}</td>
@@ -246,6 +355,7 @@ function renderStock(){
       <td style="font-family:'Space Mono',monospace">${s.parLevel}</td>
       <td style="font-family:'Space Mono',monospace">&#8373;${s.costPerUnit.toFixed(2)}</td>
       <td style="font-size:11px;color:var(--text-dim)">${s.lastRestocked||'—'}</td>
+      <td style="font-size:11px;color:var(--text-dim)">${s.lastRestockedBy||'—'}</td>
     </tr>`).join('');
 }
 
@@ -272,6 +382,21 @@ function renderStaleStock(){
     </div>`).join('');
 }
 
+// v4.3: full restock history — date, time, item, qty, and who did it.
+function renderRestockLog(){
+  const log = barData.restockLog || [];
+  const el = document.getElementById('restockLogBody');
+  if(log.length===0){ el.innerHTML = '<tr><td colspan="5" class="empty">No restocks logged yet.</td></tr>'; return; }
+  el.innerHTML = log.map(r => `
+    <tr>
+      <td style="font-family:'Space Mono',monospace;font-size:11px">${r.timestamp}</td>
+      <td>${r.item}</td>
+      <td style="color:var(--green);font-family:'Space Mono',monospace">+${r.qtyAdded}</td>
+      <td style="font-family:'Space Mono',monospace">${r.newQty}</td>
+      <td>${r.restockedBy||'—'}</td>
+    </tr>`).join('');
+}
+
 function renderStaff(){
   const staff = (barData.staff||[]).filter(s=>s.name || (s.initials && s.initials.trim()));
   const el = document.getElementById('staffGrid');
@@ -284,6 +409,23 @@ function renderStaff(){
     </div>`).join('');
 }
 
+// v4.3: fills the "Restocked by" dropdown from Staff, so the person
+// restocking picks their initials instead of typing a name.
+function populateStaffDropdowns(){
+  const staff = (barData.staff||[]).filter(s=>s.initials && s.initials.trim());
+  const sel = document.getElementById('restockBy');
+  const current = sel.value;
+  sel.innerHTML = '<option value="">Restocked by... (required)</option>' +
+    staff.map(s => `<option value="${s.initials}">${s.initials}${s.name?' — '+s.name:''}</option>`).join('');
+  if(staff.some(s=>s.initials===current)) sel.value = current;
+}
+
+// v4.3: autocomplete list of known stock item names for the restock field.
+function populateStockDatalist(){
+  const items = (barData.stock||[]).map(s=>s.item);
+  document.getElementById('stockItemList').innerHTML = items.map(i=>`<option value="${i}">`).join('');
+}
+
 // Accepts a phone number OR a customer ID in any short form
 // (THWGH1 / GH1 / 1) — matched flexibly on the backend.
 async function lookupCustomer(){
@@ -294,6 +436,7 @@ async function lookupCustomer(){
   resultEl.innerHTML = 'Looking up...';
   try{
     const res = await fetch(API_URL + '?action=getCustomer&query=' + encodeURIComponent(query) + '&t=' + Date.now());
+    if(!res.ok){ throw new Error('Server responded with status ' + res.status); }
     const data = await res.json();
     if(!data.success) throw new Error(data.error||'Lookup failed');
     if(!data.found){
@@ -302,7 +445,10 @@ async function lookupCustomer(){
       resultEl.innerHTML = `<b>${data.custId}</b> — ${data.name}<br>Phone: ${data.phone||'—'}<br>Loyalty points: ${data.loyaltyPoints}<br>Total visits: ${data.totalVisits}<br>Last visit: ${data.lastVisit||'—'}`;
     }
   }catch(e){
-    resultEl.innerHTML = 'Connection error — try again.';
+    // v4.3: show the real error instead of a generic message, so a
+    // stale deployment / auth issue is distinguishable from a real bug.
+    resultEl.innerHTML = '<span style="color:var(--red)">Error: ' + (e.message||'connection failed') + '. See the yellow banner at the top of the page for the likely cause.</span>';
+    showApiError(e.message || 'Customer lookup failed.');
   }
 }
 
@@ -311,18 +457,21 @@ async function submitRestock(){
   const qtyAdded = document.getElementById('restockQty').value;
   const parLevel = document.getElementById('restockPar').value;
   const costPerUnit = document.getElementById('restockCost').value;
+  const restockedBy = document.getElementById('restockBy').value;
   const resultEl = document.getElementById('restockResult');
   if(!item || !qtyAdded){ resultEl.innerHTML = '<span style="color:var(--red)">Item name and quantity are required.</span>'; return; }
+  if(!restockedBy){ resultEl.innerHTML = '<span style="color:var(--red)">Pick who is restocking from the dropdown.</span>'; return; }
   resultEl.innerHTML = 'Saving...';
   try{
-    let url = API_URL + '?action=addBarStock&item=' + encodeURIComponent(item) + '&qtyAdded=' + encodeURIComponent(qtyAdded);
+    let url = API_URL + '?action=addBarStock&item=' + encodeURIComponent(item) + '&qtyAdded=' + encodeURIComponent(qtyAdded) + '&restockedBy=' + encodeURIComponent(restockedBy);
     if(parLevel) url += '&parLevel=' + encodeURIComponent(parLevel);
     if(costPerUnit) url += '&costPerUnit=' + encodeURIComponent(costPerUnit);
     url += '&t=' + Date.now();
     const res = await fetch(url);
+    if(!res.ok){ throw new Error('Server responded with status ' + res.status); }
     const data = await res.json();
     if(!data.success) throw new Error(data.error||'Could not restock');
-    resultEl.innerHTML = `<span style="color:var(--green)">&#10003; ${item} — new qty: ${data.newQty}${data.newItem?' (new item created)':''}</span>`;
+    resultEl.innerHTML = `<span class="flash">&#10003; ${item} — new qty: ${data.newQty}${data.newItem?' (new item created)':''} · logged under ${data.restockedBy} at ${data.timestamp}</span>`;
     document.getElementById('restockItem').value = '';
     document.getElementById('restockQty').value = '';
     document.getElementById('restockPar').value = '';
