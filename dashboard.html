@@ -11,6 +11,7 @@
 .header{background:var(--surface);border-bottom:1px solid var(--border);padding:12px 24px;display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;z-index:100;}
 .logo-row{display:flex;align-items:center;gap:12px;}
 .logo-row img{height:36px;width:auto;display:block;}
+.brand-fallback{font-family:'Syne',sans-serif;font-weight:800;font-size:18px;color:var(--gold);letter-spacing:1px;}
 .logo-row span{color:var(--text-dim);font-weight:400;font-size:11px;letter-spacing:3px;}
 .header-right{display:flex;align-items:center;gap:16px;}
 .last-refresh{font-size:11px;color:var(--muted);font-family:'Space Mono',monospace;}
@@ -61,7 +62,7 @@ select:focus,input:focus,textarea:focus{border-color:var(--gold);}
 <body>
 <div class="header">
   <div class="logo-row">
-    <img src="logo-white.png" alt="THE WHITE HOUSE GH">
+    <img src="logo-white.png" alt="THE WHITE HOUSE GH" onerror="this.onerror=null;this.replaceWith(Object.assign(document.createElement('div'),{className:'brand-fallback',textContent:'THE WHITE HOUSE GH'}));">
     <span>MEMBERS DASHBOARD</span>
   </div>
   <div class="header-right"><span class="last-refresh" id="lastRefresh">Loading...</span><button class="refresh-btn" onclick="loadData()">&#8635; REFRESH</button></div>
@@ -193,10 +194,12 @@ const API_URL = 'https://script.google.com/macros/s/AKfycbyyGLRGOhHrtT_zXj-99tW8
    it automatically becomes a clickable link in the dashboard footer.
    ----------------------------------------------------------- */
 const FOOTER_LINKS = [
-  { name:'TikTok',        url:'' },
-  { name:'Instagram',     url:'' },
-  { name:'Facebook',      url:'' },
-  { name:'Website',       url:'' }
+  { name:'TikTok',          url:'https://www.tiktok.com/@thewhitehousegh' },
+  { name:'Instagram',       url:'https://www.instagram.com/thewhitehousegh' },
+  { name:'Facebook',        url:'https://www.facebook.com/thewhitehousegh' },
+  { name:'YouTube',         url:'https://www.youtube.com/@thewhitehousegh' },
+  { name:'WhatsApp Channel',url:'' }, // paste the channel invite link once you have it
+  { name:'Website',         url:'https://www.thewhitehousegh.com' }
 ];
 
 let state = { customers: [], leaderboard: [], rewards: [], pointsLog: [], bookings: [], redemptions: [], totalCustomers: 0, newToday: 0 };
