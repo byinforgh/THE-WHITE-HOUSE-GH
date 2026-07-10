@@ -25,6 +25,7 @@
   .card::before{ content:""; position:absolute; top:0; left:0; right:0; height:4px; background:linear-gradient(90deg,var(--gold),var(--teal)); }
   .brand{ display:flex; align-items:center; gap:12px; margin-bottom:22px; }
   .brand img{ height:48px; width:auto; display:block; }
+  .brand-fallback{ font-family:'Syne',sans-serif; font-weight:800; font-size:20px; color:var(--cream); letter-spacing:1px; }
   .brand .tagline{ font-family:'Space Mono',monospace; font-size:11px; color:var(--muted); letter-spacing:1px; text-transform:uppercase; }
   .progress{ display:flex; gap:6px; margin-bottom:22px; }
   .progress .seg{ flex:1; height:4px; border-radius:2px; background:var(--line); transition:background .3s; }
@@ -76,7 +77,7 @@
 
 <div class="card">
   <div class="brand">
-    <img src="logo-white.png" alt="THE WHITE HOUSE GH">
+    <img src="logo-white.png" alt="THE WHITE HOUSE GH" onerror="this.onerror=null;this.replaceWith(Object.assign(document.createElement('div'),{className:'brand-fallback',textContent:'THE WHITE HOUSE GH'}));">
     <div class="tagline">Members Club · Rewards</div>
   </div>
 
@@ -127,10 +128,13 @@
     <div class="step" data-step="3">
       <span class="badge">Quick question</span>
       <h1>Which service applies to you?</h1>
+      <p class="sub">Tap all that apply.</p>
       <div id="serviceChoices"></div>
       <input type="hidden" id="service">
+      <div class="err" id="err3"></div>
       <div class="row">
         <button type="button" class="btn btn-ghost" onclick="goStep(2)">Back</button>
+        <button type="button" class="btn btn-primary" onclick="goStep(4)">Next</button>
       </div>
     </div>
 
@@ -138,10 +142,13 @@
     <div class="step" data-step="4">
       <span class="badge">Almost done</span>
       <h1>How did you hear about us?</h1>
+      <p class="sub">Tap all that apply.</p>
       <div id="howHeardChoices"></div>
       <input type="hidden" id="howHeard">
+      <div class="err" id="err4"></div>
       <div class="row">
         <button type="button" class="btn btn-ghost" onclick="goStep(3)">Back</button>
+        <button type="button" class="btn btn-primary" onclick="goStep(5)">Next</button>
       </div>
     </div>
 
@@ -186,18 +193,20 @@ const CONFIG = {
    "You're a member" screen. Nothing else needs to change.
    ----------------------------------------------------------- */
 const FOLLOW_LINKS = [
-  { name:'TikTok',        url:'' },
-  { name:'Instagram',     url:'' },
-  { name:'Facebook',      url:'' },
-  { name:'Google Review', url:'' }
+  { name:'TikTok',          url:'https://www.tiktok.com/@thewhitehousegh' },
+  { name:'Instagram',       url:'https://www.instagram.com/thewhitehousegh' },
+  { name:'Facebook',        url:'https://www.facebook.com/thewhitehousegh' },
+  { name:'YouTube',         url:'https://www.youtube.com/@thewhitehousegh' },
+  { name:'WhatsApp Channel',url:'' }, // paste the channel invite link (whatsapp.com/channel/...) once you have it
+  { name:'Google Review',   url:'' }  // paste your Google Maps review link here once you have it
 ];
-const WEBSITE_URL = ''; // e.g. 'https://thewhitehousegh.com' — leave blank until the site is live
+const WEBSITE_URL = 'https://www.thewhitehousegh.com';
 
 const SERVICES = ['Pool','Bar','Canteen','Events','Family Occasions','Couples','Other'];
 const HOW_HEARD = ['Social Media','Word of Mouth','Referral','Radio','TV','Sign','Other'];
 const SOCIALS = ['TikTok','YouTube','Instagram','Facebook','Google Review'];
 
-const state = { service:null, howHeard:null, socials:[] };
+const state = { service:[], howHeard:[], socials:[] };
 const totalSteps = 5;
 const PAGE_LOAD_TIME = Date.now();
 
@@ -208,20 +217,22 @@ function buildProgress(){
 buildProgress();
 function updateProgress(step){ for(let i=1;i<=totalSteps;i++) document.getElementById('seg'+i).classList.toggle('done', i<=step); }
 
-function renderChoiceGroup(containerId, hiddenId, items, nextStep){
+// Multi-select: tap to add, tap again to remove. Nothing auto-advances — the person
+// picks as many as apply, then taps Next themselves.
+function renderMultiChoiceGroup(containerId, hiddenId, items){
   document.getElementById(containerId).innerHTML = items.map(v =>
-    `<button type="button" class="choice" onclick="pickSingle('${containerId}','${hiddenId}','${v}',${nextStep})"><b>${v}</b></button>`
+    `<button type="button" class="choice" onclick="toggleChoice('${containerId}','${hiddenId}','${v}',this)"><b>${v}</b></button>`
   ).join('');
 }
-function pickSingle(containerId, hiddenId, value, nextStep){
-  state[hiddenId] = value;
-  document.getElementById(hiddenId).value = value;
-  document.querySelectorAll('#'+containerId+' .choice').forEach(b=>b.classList.remove('tapped'));
-  event.target.closest('.choice').classList.add('tapped');
-  setTimeout(()=>goStep(nextStep), 150);
+function toggleChoice(containerId, hiddenId, value, el){
+  const arr = state[hiddenId];
+  const idx = arr.indexOf(value);
+  if(idx===-1){ arr.push(value); el.classList.add('tapped'); }
+  else { arr.splice(idx,1); el.classList.remove('tapped'); }
+  document.getElementById(hiddenId).value = arr.join(', ');
 }
-renderChoiceGroup('serviceChoices','service',SERVICES,4);
-renderChoiceGroup('howHeardChoices','howHeard',HOW_HEARD,5);
+renderMultiChoiceGroup('serviceChoices','service',SERVICES);
+renderMultiChoiceGroup('howHeardChoices','howHeard',HOW_HEARD);
 
 function renderSocialChips(){
   document.getElementById('socialChips').innerHTML = SOCIALS.map(s =>
@@ -239,16 +250,18 @@ function toggleSocial(s, el){
 function validateStep1(){
   const fullName = document.getElementById('fullName').value.trim();
   const phone = document.getElementById('phone').value.trim();
-  const hasLetters = v => /[a-zA-Z]{2,}/.test(v);
+  const hasLetters = v => /[a-zA-Z]{3,}/.test(v);
   const digits = phone.replace(/[\s-]/g,'');
   const validPhone = /^0\d{9}$/.test(digits) || /^(\+233|233)\d{9}$/.test(digits);
-  if(fullName.length < 2 || !hasLetters(fullName)) return 'Enter your full name.';
+  if(fullName.length < 3 || !hasLetters(fullName)) return 'Enter your full name (at least 3 letters).';
   if(!validPhone) return 'Enter a valid Ghana number, e.g. 024 123 4567.';
   return '';
 }
 
 function goStep(n){
   if(n===2){ const m=validateStep1(); if(m){ document.getElementById('err1').textContent=m; return; } document.getElementById('err1').textContent=''; }
+  if(n===4){ if(state.service.length===0){ document.getElementById('err3').textContent='Pick at least one option.'; return; } document.getElementById('err3').textContent=''; }
+  if(n===5){ if(state.howHeard.length===0){ document.getElementById('err4').textContent='Pick at least one option.'; return; } document.getElementById('err4').textContent=''; }
   document.querySelectorAll('.step').forEach(s=>s.classList.remove('active'));
   document.querySelector('.step[data-step="'+n+'"]').classList.add('active');
   if(n<=totalSteps) updateProgress(n);
@@ -271,8 +284,8 @@ async function submitRegistration(){
     whatsapp: document.getElementById('whatsapp').value.trim(),
     email: document.getElementById('email').value.trim(),
     address: document.getElementById('address').value.trim(),
-    service: state.service || '',
-    howHeard: state.howHeard || '',
+    service: state.service.join(', '),
+    howHeard: state.howHeard.join(', '),
     suggestions: document.getElementById('suggestions').value.trim(),
     followedSocials: state.socials.join(', '),
     source: 'Landing Page — QR / Direct'
