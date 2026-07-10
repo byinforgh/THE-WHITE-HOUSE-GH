@@ -1,0 +1,340 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<title>THE WHITE HOUSE GH — Get Your Member ID</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Syne:wght@600;700;800&family=Space+Mono:wght@400;700&display=swap');
+  :root{
+    --bg:#0a0a0a; --panel:#141210; --gold:#f5c842; --gold-dim:#c9a233;
+    --teal:#3fb6a8; --cream:#faf6ec; --text:#f2ede0; --muted:#a89f8c;
+    --line:#2a271f; --radius:18px;
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0;padding:0;}
+  body{
+    background:
+      radial-gradient(circle at 15% 0%, rgba(245,200,66,0.10), transparent 45%),
+      radial-gradient(circle at 90% 100%, rgba(63,182,168,0.10), transparent 45%),
+      var(--bg);
+    color:var(--text); font-family:'Space Mono', monospace; min-height:100vh;
+    display:flex; align-items:center; justify-content:center; padding:20px;
+  }
+  .card{ width:100%; max-width:480px; background:var(--panel); border:1px solid var(--line); border-radius:var(--radius); padding:28px 24px 24px; position:relative; overflow:hidden; }
+  .card::before{ content:""; position:absolute; top:0; left:0; right:0; height:4px; background:linear-gradient(90deg,var(--gold),var(--teal)); }
+  .brand{ display:flex; align-items:center; gap:12px; margin-bottom:22px; }
+  .brand img{ height:48px; width:auto; display:block; }
+  .brand .tagline{ font-family:'Space Mono',monospace; font-size:11px; color:var(--muted); letter-spacing:1px; text-transform:uppercase; }
+  .progress{ display:flex; gap:6px; margin-bottom:22px; }
+  .progress .seg{ flex:1; height:4px; border-radius:2px; background:var(--line); transition:background .3s; }
+  .progress .seg.done{ background:var(--gold); }
+  h1{ font-family:'Syne',sans-serif; font-weight:800; font-size:22px; line-height:1.25; margin:0 0 6px; color:var(--cream); }
+  p.sub{ color:var(--muted); font-size:13px; line-height:1.5; margin:0 0 20px;}
+  label{ display:block; font-size:11px; text-transform:uppercase; letter-spacing:1px; color:var(--gold); margin:16px 0 6px; }
+  label.req::after{ content:" *"; color:var(--teal); }
+  input[type=text], input[type=tel], input[type=email], select, textarea{
+    width:100%; background:#1c1a15; border:1px solid var(--line); color:var(--text);
+    font-family:'Space Mono',monospace; font-size:15px; padding:14px; border-radius:10px; outline:none;
+  }
+  input:focus, select:focus, textarea:focus{ border-color:var(--gold); }
+  textarea{ resize:vertical; min-height:70px; }
+  .hp{ position:absolute; left:-9999px; top:-9999px; }
+  .choice{ display:block; width:100%; text-align:left; background:#1c1a15; border:1px solid var(--line); color:var(--text); font-family:'Space Mono',monospace; font-size:15px; line-height:1.4; padding:16px; border-radius:12px; margin-bottom:12px; cursor:pointer; transition:border-color .15s, background .15s; }
+  .choice b{ color:var(--gold); font-family:'Syne',sans-serif; }
+  .choice:active, .choice.tapped{ border-color:var(--gold); background:#221f16; }
+  .chip-row{ display:flex; flex-wrap:wrap; gap:8px; margin-top:4px; }
+  .chip{ background:#1c1a15; border:1px solid var(--line); color:var(--text-dim,var(--muted)); font-family:'Space Mono',monospace; font-size:12px; padding:9px 14px; border-radius:20px; cursor:pointer; transition:border-color .15s,background .15s,color .15s; }
+  .chip.on{ border-color:var(--teal); background:rgba(63,182,168,0.14); color:var(--teal); }
+  .btn{ display:inline-flex; align-items:center; justify-content:center; gap:8px; width:100%; padding:16px; border-radius:12px; border:none; font-family:'Syne',sans-serif; font-weight:700; font-size:15px; cursor:pointer; margin-top:8px; }
+  .btn-primary{ background:var(--gold); color:#141210; }
+  .btn-primary:disabled{ opacity:.4; cursor:not-allowed; }
+  .btn-ghost{ background:transparent; color:var(--muted); border:1px solid var(--line); }
+  .btn-teal{ background:var(--teal); color:#0a0a0a; }
+  .row{ display:flex; gap:10px; margin-top:14px; }
+  .row .btn{ margin-top:0; }
+  .step{ display:none; }
+  .step.active{ display:block; animation:fade .25s ease; }
+  @keyframes fade{ from{opacity:0; transform:translateY(6px);} to{opacity:1; transform:translateY(0);} }
+  .badge{ display:inline-block; background:rgba(245,200,66,0.12); color:var(--gold); border:1px solid rgba(245,200,66,0.35); font-size:11px; padding:4px 10px; border-radius:20px; margin-bottom:12px; letter-spacing:0.5px; }
+  .success-icon{ width:56px;height:56px;border-radius:50%; background:rgba(63,182,168,0.15); border:1px solid var(--teal); display:flex;align-items:center;justify-content:center; font-size:26px; margin-bottom:14px; }
+  .idcard{ background:linear-gradient(135deg,#1c1a15,#12100c); border:1px solid var(--gold); border-radius:14px; padding:22px; text-align:center; margin:16px 0 20px; }
+  .idcard .lbl{ font-size:10px; letter-spacing:2px; color:var(--muted); text-transform:uppercase; margin-bottom:8px;}
+  .idcard .code{ font-family:'Syne',sans-serif; font-weight:800; font-size:30px; color:var(--gold); letter-spacing:1px; }
+  .idcard .pts{ margin-top:10px; font-size:13px; color:var(--teal); }
+  .muted-note{ font-size:12px; color:var(--muted); margin-top:14px; line-height:1.5; }
+  .err{ color:#e77; font-size:12px; margin-top:6px; min-height:16px; }
+  .spinner{ width:16px;height:16px;border-radius:50%; border:2px solid rgba(20,18,16,0.3); border-top-color:#141210; animation:spin .7s linear infinite; display:none; }
+  @keyframes spin{ to{ transform:rotate(360deg); } }
+  /* Follow-us links on the outcome screen — inactive (no href) until a URL is filled in below */
+  .follow-row{ display:flex; flex-wrap:wrap; gap:8px; margin-top:16px; }
+  .follow-link{ display:inline-flex; align-items:center; gap:6px; background:#1c1a15; border:1px solid var(--line); color:var(--muted); font-family:'Space Mono',monospace; font-size:12px; padding:9px 14px; border-radius:20px; text-decoration:none; cursor:default; }
+  .follow-link.live{ color:var(--teal); border-color:var(--teal); cursor:pointer; }
+</style>
+</head>
+<body>
+
+<div class="card">
+  <div class="brand">
+    <img src="logo-white.png" alt="THE WHITE HOUSE GH">
+    <div class="tagline">Members Club · Rewards</div>
+  </div>
+
+  <div class="progress" id="progress"></div>
+
+  <form id="regForm" autocomplete="off">
+    <input class="hp" type="text" name="website" id="website" tabindex="-1" autocomplete="off">
+
+    <!-- STEP 1: contact details -->
+    <div class="step active" data-step="1">
+      <h1>Get your Member ID.</h1>
+      <p class="sub">Takes under a minute. Earn points from your first visit.</p>
+
+      <label class="req">Full name</label>
+      <input type="text" id="fullName" required>
+
+      <label>Business name (optional)</label>
+      <input type="text" id="businessName">
+
+      <label class="req">Phone number</label>
+      <input type="tel" id="phone" placeholder="024 123 4567" required>
+
+      <label>WhatsApp (only if different)</label>
+      <input type="tel" id="whatsapp" placeholder="Leave blank if same as phone">
+
+      <div class="err" id="err1"></div>
+      <button type="button" class="btn btn-primary" onclick="goStep(2)">Next</button>
+    </div>
+
+    <!-- STEP 2: optional details -->
+    <div class="step" data-step="2">
+      <h1>A couple more (optional).</h1>
+      <p class="sub">Skip anything you'd rather not share.</p>
+
+      <label>Email</label>
+      <input type="email" id="email">
+
+      <label>Address</label>
+      <input type="text" id="address">
+
+      <div class="row">
+        <button type="button" class="btn btn-ghost" onclick="goStep(1)">Back</button>
+        <button type="button" class="btn btn-primary" onclick="goStep(3)">Next</button>
+      </div>
+    </div>
+
+    <!-- STEP 3: service interest -->
+    <div class="step" data-step="3">
+      <span class="badge">Quick question</span>
+      <h1>Which service applies to you?</h1>
+      <div id="serviceChoices"></div>
+      <input type="hidden" id="service">
+      <div class="row">
+        <button type="button" class="btn btn-ghost" onclick="goStep(2)">Back</button>
+      </div>
+    </div>
+
+    <!-- STEP 4: how did you hear -->
+    <div class="step" data-step="4">
+      <span class="badge">Almost done</span>
+      <h1>How did you hear about us?</h1>
+      <div id="howHeardChoices"></div>
+      <input type="hidden" id="howHeard">
+      <div class="row">
+        <button type="button" class="btn btn-ghost" onclick="goStep(3)">Back</button>
+      </div>
+    </div>
+
+    <!-- STEP 5: socials + suggestions + submit -->
+    <div class="step" data-step="5">
+      <h1>Last thing.</h1>
+      <p class="sub">Which of these do you already follow?</p>
+      <div class="chip-row" id="socialChips"></div>
+      <input type="hidden" id="followedSocials">
+
+      <label>Any suggestions? (optional)</label>
+      <textarea id="suggestions" placeholder="Anything you'd like to tell us"></textarea>
+
+      <button type="button" class="btn btn-primary" id="submitBtn" onclick="submitRegistration()">
+        <span class="spinner" id="spinner"></span>
+        <span id="submitLabel">Get my Member ID</span>
+      </button>
+      <div class="err" id="err5"></div>
+      <button type="button" class="btn btn-ghost" onclick="goStep(4)">Back</button>
+    </div>
+
+    <!-- STEP 6: outcome -->
+    <div class="step" data-step="6">
+      <div id="outcome"></div>
+    </div>
+  </form>
+</div>
+
+<script>
+/* =========================================================
+   CONFIG
+   ========================================================= */
+const CONFIG = {
+  GAS_URL: "https://script.google.com/macros/s/AKfycbyyGLRGOhHrtT_zXj-99tW8Cbril7OZcygt5oiiS5NApxtsYLUt3bDA5b8W2LbjQpFrNw/exec",
+  WHATSAPP_NUMBER: "233509960980" // no leading zero, no +
+};
+
+/* -----------------------------------------------------------
+   FOLLOW-US / WEBSITE LINKS — leave the url fields blank for now.
+   The moment you drop a real link into any "url" below, that
+   button automatically lights up and becomes clickable on the
+   "You're a member" screen. Nothing else needs to change.
+   ----------------------------------------------------------- */
+const FOLLOW_LINKS = [
+  { name:'TikTok',        url:'' },
+  { name:'Instagram',     url:'' },
+  { name:'Facebook',      url:'' },
+  { name:'Google Review', url:'' }
+];
+const WEBSITE_URL = ''; // e.g. 'https://thewhitehousegh.com' — leave blank until the site is live
+
+const SERVICES = ['Pool','Bar','Canteen','Events','Family Occasions','Couples','Other'];
+const HOW_HEARD = ['Social Media','Word of Mouth','Referral','Radio','TV','Sign','Other'];
+const SOCIALS = ['TikTok','YouTube','Instagram','Facebook','Google Review'];
+
+const state = { service:null, howHeard:null, socials:[] };
+const totalSteps = 5;
+const PAGE_LOAD_TIME = Date.now();
+
+function buildProgress(){
+  const el = document.getElementById('progress'); el.innerHTML='';
+  for(let i=1;i<=totalSteps;i++){ const seg=document.createElement('div'); seg.className='seg'; seg.id='seg'+i; el.appendChild(seg); }
+}
+buildProgress();
+function updateProgress(step){ for(let i=1;i<=totalSteps;i++) document.getElementById('seg'+i).classList.toggle('done', i<=step); }
+
+function renderChoiceGroup(containerId, hiddenId, items, nextStep){
+  document.getElementById(containerId).innerHTML = items.map(v =>
+    `<button type="button" class="choice" onclick="pickSingle('${containerId}','${hiddenId}','${v}',${nextStep})"><b>${v}</b></button>`
+  ).join('');
+}
+function pickSingle(containerId, hiddenId, value, nextStep){
+  state[hiddenId] = value;
+  document.getElementById(hiddenId).value = value;
+  document.querySelectorAll('#'+containerId+' .choice').forEach(b=>b.classList.remove('tapped'));
+  event.target.closest('.choice').classList.add('tapped');
+  setTimeout(()=>goStep(nextStep), 150);
+}
+renderChoiceGroup('serviceChoices','service',SERVICES,4);
+renderChoiceGroup('howHeardChoices','howHeard',HOW_HEARD,5);
+
+function renderSocialChips(){
+  document.getElementById('socialChips').innerHTML = SOCIALS.map(s =>
+    `<div class="chip" onclick="toggleSocial('${s}',this)">${s}</div>`
+  ).join('');
+}
+renderSocialChips();
+function toggleSocial(s, el){
+  const idx = state.socials.indexOf(s);
+  if(idx===-1){ state.socials.push(s); el.classList.add('on'); }
+  else { state.socials.splice(idx,1); el.classList.remove('on'); }
+  document.getElementById('followedSocials').value = state.socials.join(', ');
+}
+
+function validateStep1(){
+  const fullName = document.getElementById('fullName').value.trim();
+  const phone = document.getElementById('phone').value.trim();
+  const hasLetters = v => /[a-zA-Z]{2,}/.test(v);
+  const digits = phone.replace(/[\s-]/g,'');
+  const validPhone = /^0\d{9}$/.test(digits) || /^(\+233|233)\d{9}$/.test(digits);
+  if(fullName.length < 2 || !hasLetters(fullName)) return 'Enter your full name.';
+  if(!validPhone) return 'Enter a valid Ghana number, e.g. 024 123 4567.';
+  return '';
+}
+
+function goStep(n){
+  if(n===2){ const m=validateStep1(); if(m){ document.getElementById('err1').textContent=m; return; } document.getElementById('err1').textContent=''; }
+  document.querySelectorAll('.step').forEach(s=>s.classList.remove('active'));
+  document.querySelector('.step[data-step="'+n+'"]').classList.add('active');
+  if(n<=totalSteps) updateProgress(n);
+}
+
+async function submitRegistration(){
+  const errEl = document.getElementById('err5'); errEl.textContent='';
+
+  if(document.getElementById('website').value.trim() !== ''){ showOutcome(true); return; } // honeypot
+  if(Date.now() - PAGE_LOAD_TIME < 3000){ showOutcome(true); return; } // too fast to be a real person
+
+  const btn = document.getElementById('submitBtn'), spinner = document.getElementById('spinner'), label = document.getElementById('submitLabel');
+  btn.disabled = true; spinner.style.display='inline-block'; label.textContent='Submitting...';
+
+  const payload = {
+    action: 'registerCustomer',
+    fullName: document.getElementById('fullName').value.trim(),
+    businessName: document.getElementById('businessName').value.trim(),
+    phone: document.getElementById('phone').value.trim(),
+    whatsapp: document.getElementById('whatsapp').value.trim(),
+    email: document.getElementById('email').value.trim(),
+    address: document.getElementById('address').value.trim(),
+    service: state.service || '',
+    howHeard: state.howHeard || '',
+    suggestions: document.getElementById('suggestions').value.trim(),
+    followedSocials: state.socials.join(', '),
+    source: 'Landing Page — QR / Direct'
+  };
+  const qs = Object.entries(payload).map(([k,v])=>k+'='+encodeURIComponent(v)).join('&');
+
+  let result = null;
+  try{
+    const res = await fetch(CONFIG.GAS_URL + '?' + qs);
+    result = await res.json();
+    if(!result.success) throw new Error(result.error || 'Unknown error');
+  }catch(e){
+    console.warn('Registration issue:', e);
+    errEl.textContent = 'Could not save automatically — showing what we have, please also message us on WhatsApp.';
+  }finally{
+    btn.disabled=false; spinner.style.display='none'; label.textContent='Get my Member ID';
+    showOutcome(false, result);
+  }
+}
+
+function renderFollowRow(){
+  const items = FOLLOW_LINKS.map(s => s.url
+    ? `<a class="follow-link live" href="${s.url}" target="_blank" rel="noopener">${s.name}</a>`
+    : `<span class="follow-link">${s.name}</span>`
+  );
+  if(WEBSITE_URL){
+    items.push(`<a class="follow-link live" href="${WEBSITE_URL}" target="_blank" rel="noopener">Our Website</a>`);
+  }
+  return `<div class="follow-row">${items.join('')}</div>`;
+}
+
+function showOutcome(silentFail, result){
+  const el = document.getElementById('outcome');
+  if(silentFail){
+    el.innerHTML = `<div class="success-icon">✓</div><h1>You're in.</h1><p class="sub">Thanks for registering with THE WHITE HOUSE GH.</p>`;
+  } else if(result && result.success){
+    const waText = encodeURIComponent('Hi! I just registered — my Member ID is ' + result.custId);
+    el.innerHTML = `
+      <div class="success-icon">✓</div>
+      <h1>${result.returning ? 'Welcome back!' : "You're a member."}</h1>
+      <p class="sub">${result.returning ? 'We found your existing account and updated it.' : 'Show this ID next time you visit — every visit earns points.'}</p>
+      <div class="idcard">
+        <div class="lbl">Your Member ID</div>
+        <div class="code">${result.custId}</div>
+        <div class="pts">★ ${result.points || 0} points on your account</div>
+      </div>
+      <a class="btn btn-teal" style="text-decoration:none;color:#0a0a0a" href="https://wa.me/${CONFIG.WHATSAPP_NUMBER}?text=${waText}" target="_blank" rel="noopener">Save my ID to WhatsApp</a>
+      <p class="muted-note">Points can go toward free drinks, entry, food, and VIP access — ask staff what's currently available.</p>
+      <p class="muted-note" style="margin-top:18px;margin-bottom:4px">Follow us</p>
+      ${renderFollowRow()}
+    `;
+  } else {
+    el.innerHTML = `
+      <div class="success-icon" style="border-color:#e77;background:rgba(231,119,119,0.12)">!</div>
+      <h1>Almost there.</h1>
+      <p class="sub">We had trouble saving this automatically. Please message us on WhatsApp so nothing gets lost.</p>
+      <a class="btn btn-teal" style="text-decoration:none;color:#0a0a0a" href="https://wa.me/${CONFIG.WHATSAPP_NUMBER}" target="_blank" rel="noopener">Message us on WhatsApp</a>
+    `;
+  }
+  document.querySelectorAll('.step').forEach(s=>s.classList.remove('active'));
+  document.querySelector('.step[data-step="6"]').classList.add('active');
+}
+</script>
+</body>
+</html>
