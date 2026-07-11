@@ -1,0 +1,281 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<title>THE WHITE HOUSE GH — Report an Issue</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Syne:wght@600;700;800&family=Space+Mono:wght@400;700&display=swap');
+  :root{
+    --bg:#0a0a0a; --panel:#141210; --gold:#f5c842; --gold-dim:#c9a233;
+    --teal:#3fb6a8; --red:#ef4444; --cream:#faf6ec; --text:#f2ede0; --muted:#a89f8c;
+    --line:#2a271f; --radius:18px;
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0;padding:0;}
+  body{
+    background:
+      radial-gradient(circle at 15% 0%, rgba(245,200,66,0.10), transparent 45%),
+      radial-gradient(circle at 90% 100%, rgba(63,182,168,0.10), transparent 45%),
+      var(--bg);
+    color:var(--text); font-family:'Space Mono', monospace; min-height:100vh;
+    display:flex; align-items:center; justify-content:center; padding:20px;
+  }
+  .card{ width:100%; max-width:480px; background:var(--panel); border:1px solid var(--line); border-radius:var(--radius); padding:28px 24px 24px; position:relative; overflow:hidden; }
+  .card::before{ content:""; position:absolute; top:0; left:0; right:0; height:4px; background:linear-gradient(90deg,var(--gold),var(--red)); }
+  .brand{ display:flex; align-items:center; gap:12px; margin-bottom:22px; }
+  .brand-fallback{ font-family:'Syne',sans-serif; font-weight:800; font-size:20px; color:var(--cream); letter-spacing:1px; }
+  .brand .tagline{ font-family:'Space Mono',monospace; font-size:11px; color:var(--muted); letter-spacing:1px; text-transform:uppercase; }
+  .progress{ display:flex; gap:6px; margin-bottom:22px; }
+  .progress .seg{ flex:1; height:4px; border-radius:2px; background:var(--line); transition:background .3s; }
+  .progress .seg.done{ background:var(--gold); }
+  h1{ font-family:'Syne',sans-serif; font-weight:800; font-size:22px; line-height:1.25; margin:0 0 6px; color:var(--cream); }
+  p.sub{ color:var(--muted); font-size:13px; line-height:1.5; margin:0 0 20px;}
+  label{ display:block; font-size:11px; text-transform:uppercase; letter-spacing:1px; color:var(--gold); margin:16px 0 6px; }
+  label.req::after{ content:" *"; color:var(--teal); }
+  input[type=text], input[type=tel], select, textarea{
+    width:100%; background:#1c1a15; border:1px solid var(--line); color:var(--text);
+    font-family:'Space Mono',monospace; font-size:15px; padding:14px; border-radius:10px; outline:none;
+  }
+  input:focus, select:focus, textarea:focus{ border-color:var(--gold); }
+  textarea{ resize:vertical; min-height:90px; }
+  .hp{ position:absolute; left:-9999px; top:-9999px; }
+  .choice{ display:block; width:100%; text-align:left; background:#1c1a15; border:1px solid var(--line); color:var(--text); font-family:'Space Mono',monospace; font-size:15px; line-height:1.4; padding:16px; border-radius:12px; margin-bottom:12px; cursor:pointer; transition:border-color .15s, background .15s; }
+  .choice b{ color:var(--gold); font-family:'Syne',sans-serif; }
+  .choice:active, .choice.tapped{ border-color:var(--gold); background:#221f16; }
+  .btn{ display:inline-flex; align-items:center; justify-content:center; gap:8px; width:100%; padding:16px; border-radius:12px; border:none; font-family:'Syne',sans-serif; font-weight:700; font-size:15px; cursor:pointer; margin-top:8px; }
+  .btn-primary{ background:var(--gold); color:#141210; }
+  .btn-primary:disabled{ opacity:.4; cursor:not-allowed; }
+  .btn-ghost{ background:transparent; color:var(--muted); border:1px solid var(--line); }
+  .btn-teal{ background:var(--teal); color:#0a0a0a; }
+  .row{ display:flex; gap:10px; margin-top:14px; }
+  .row .btn{ margin-top:0; }
+  .step{ display:none; }
+  .step.active{ display:block; animation:fade .25s ease; }
+  @keyframes fade{ from{opacity:0; transform:translateY(6px);} to{opacity:1; transform:translateY(0);} }
+  .badge{ display:inline-block; background:rgba(245,200,66,0.12); color:var(--gold); border:1px solid rgba(245,200,66,0.35); font-size:11px; padding:4px 10px; border-radius:20px; margin-bottom:12px; letter-spacing:0.5px; }
+  .success-icon{ width:56px;height:56px;border-radius:50%; background:rgba(63,182,168,0.15); border:1px solid var(--teal); display:flex;align-items:center;justify-content:center; font-size:26px; margin-bottom:14px; }
+  .idcard{ background:linear-gradient(135deg,#1c1a15,#12100c); border:1px solid var(--gold); border-radius:14px; padding:22px; text-align:center; margin:16px 0 20px; }
+  .idcard .lbl{ font-size:10px; letter-spacing:2px; color:var(--muted); text-transform:uppercase; margin-bottom:8px;}
+  .idcard .code{ font-family:'Syne',sans-serif; font-weight:800; font-size:26px; color:var(--gold); letter-spacing:1px; }
+  .muted-note{ font-size:12px; color:var(--muted); margin-top:14px; line-height:1.5; }
+  .err{ color:#e77; font-size:12px; margin-top:6px; min-height:16px; }
+  .spinner{ width:16px;height:16px;border-radius:50%; border:2px solid rgba(20,18,16,0.3); border-top-color:#141210; animation:spin .7s linear infinite; display:none; }
+  @keyframes spin{ to{ transform:rotate(360deg); } }
+  .priority-grid{ display:grid; grid-template-columns:1fr 1fr; gap:10px; }
+  .priority-btn{ background:#1c1a15; border:1px solid var(--line); color:var(--text); font-family:'Syne',sans-serif; font-weight:700; font-size:13px; padding:14px; border-radius:12px; cursor:pointer; text-align:center; }
+  .priority-btn.tapped{ border-color:var(--gold); background:#221f16; }
+  .priority-btn.tapped.urgent{ border-color:var(--red); background:#2a1414; color:#ffb3b3; }
+</style>
+</head>
+<body>
+
+<div class="card">
+  <div class="brand">
+    <div class="brand-fallback">THE WHITE HOUSE GH</div>
+  </div>
+  <div style="margin-bottom:6px"><span class="tagline" style="font-family:'Space Mono',monospace;font-size:11px;color:var(--muted);letter-spacing:1px;text-transform:uppercase">Facilities Report</span></div>
+
+  <div class="progress" id="progress"></div>
+
+  <form id="reportForm" autocomplete="off">
+    <input class="hp" type="text" name="website" id="website" tabindex="-1" autocomplete="off">
+
+    <!-- STEP 1: what & where -->
+    <div class="step active" data-step="1">
+      <h1>Spot something that needs fixing?</h1>
+      <p class="sub">Takes under a minute. Thanks for letting us know.</p>
+
+      <label class="req">Where is it?</label>
+      <select id="location">
+        <option value="">Select a location...</option>
+      </select>
+
+      <label class="req">What's the issue?</label>
+      <textarea id="description" placeholder="e.g. Light not working in the bathroom, tap leaking, AC not cooling..."></textarea>
+
+      <div class="err" id="err1"></div>
+      <button type="button" class="btn btn-primary" onclick="goStep(2)">Next</button>
+    </div>
+
+    <!-- STEP 2: how urgent -->
+    <div class="step" data-step="2">
+      <span class="badge">Quick question</span>
+      <h1>How urgent is it?</h1>
+      <p class="sub">Helps us get to it in the right order.</p>
+      <div class="priority-grid">
+        <button type="button" class="priority-btn" data-val="Low" onclick="selectPriority('Low', this)"><b>Low</b><br><span style="font-size:11px;color:var(--muted)">Whenever</span></button>
+        <button type="button" class="priority-btn" data-val="Medium" onclick="selectPriority('Medium', this)"><b>Medium</b><br><span style="font-size:11px;color:var(--muted)">Soon</span></button>
+        <button type="button" class="priority-btn" data-val="High" onclick="selectPriority('High', this)"><b>High</b><br><span style="font-size:11px;color:var(--muted)">Today</span></button>
+        <button type="button" class="priority-btn" data-val="Urgent" onclick="selectPriority('Urgent', this)"><b>Urgent</b><br><span style="font-size:11px;color:var(--muted)">Safety issue</span></button>
+      </div>
+      <input type="hidden" id="priority" value="Medium">
+      <div class="row">
+        <button type="button" class="btn btn-ghost" onclick="goStep(1)">Back</button>
+        <button type="button" class="btn btn-primary" onclick="goStep(3)">Next</button>
+      </div>
+    </div>
+
+    <!-- STEP 3: optional contact + submit -->
+    <div class="step" data-step="3">
+      <h1>Last thing (optional).</h1>
+      <p class="sub">Only if you'd like us to follow up with you directly.</p>
+
+      <label>Your name</label>
+      <input type="text" id="reporterName">
+
+      <label>Phone or room number</label>
+      <input type="tel" id="reporterContact" placeholder="e.g. 024 123 4567 or Room 204">
+
+      <button type="button" class="btn btn-primary" id="submitBtn" onclick="submitReport()">
+        <span class="spinner" id="spinner"></span>
+        <span id="submitLabel">Send Report</span>
+      </button>
+      <div class="err" id="err3"></div>
+      <button type="button" class="btn btn-ghost" onclick="goStep(2)">Back</button>
+    </div>
+
+    <!-- STEP 4: outcome -->
+    <div class="step" data-step="4">
+      <div id="outcome"></div>
+    </div>
+  </form>
+</div>
+
+<script>
+// Fill in once the Facilities Apps Script is deployed (see Code.gs setup notes).
+const API_URL = 'https://script.google.com/macros/s/AKfycbxdXWHqohz78kNcgtFrI_dVO6k5s6SqFL4wd-c00OB4xCfbFg4TrFyPwd2VGYz4j3Ry/exec';
+
+// Static fallback list, mirrors the seeded 🏢 Facilities Assets sheet.
+// This form tries to load the live list from the sheet first; if that
+// fails (offline, not deployed yet), it falls back to this list so
+// the form still works.
+const FALLBACK_LOCATIONS = (function(){
+  const rooms = [];
+  for(let floor=1; floor<=5; floor++){
+    for(let num=1; num<=10; num++){ rooms.push('Room ' + ((floor*100)+num)); }
+  }
+  return rooms.concat([
+    'Main Pool','Family/Kids Pool','Pool Changing Rooms','Pool Deck & Seating',
+    'Restaurant — Dining Area','Restaurant — Kitchen','Bar — Search & Sell Area','Bar Storage',
+    'Main Open-Air Event Grounds','Stage & AV Area','Reception / Front Desk','Back Office',
+    'Parking Lot','Main Entrance / Gate','Perimeter Wall / Fencing','Garden / Landscaping',
+    'Gym','Laundry Room','Generator / Backup Power','Water System / Borehole',
+    'CCTV / Security Room','Staff Quarters','Storage / Warehouse','WiFi / Network Room','Other / Not Listed'
+  ]);
+})();
+
+const totalSteps = 3;
+const PAGE_LOAD_TIME = Date.now();
+
+function buildProgress(){
+  const el = document.getElementById('progress'); el.innerHTML='';
+  for(let i=1;i<=totalSteps;i++){ const seg=document.createElement('div'); seg.className='seg'; seg.id='seg'+i; el.appendChild(seg); }
+}
+buildProgress();
+function updateProgress(step){ for(let i=1;i<=totalSteps;i++) document.getElementById('seg'+i).classList.toggle('done', i<=step); }
+
+function populateLocations(list){
+  const sel = document.getElementById('location');
+  sel.innerHTML = '<option value="">Select a location...</option>' + list.map(l=>`<option value="${l}">${l}</option>`).join('');
+}
+populateLocations(FALLBACK_LOCATIONS);
+
+async function tryLoadLiveLocations(){
+  if(API_URL.indexOf('PASTE_YOUR') === 0) return;
+  try{
+    const res = await fetch(API_URL + '?action=getFacilitiesData&t=' + Date.now());
+    const data = await res.json();
+    if(data.success && data.assets && data.assets.length){
+      const active = data.assets.filter(a => a.status !== 'Inactive').map(a => a.location);
+      populateLocations(active.concat(['Other / Not Listed']));
+    }
+  }catch(e){ /* keep fallback list */ }
+}
+tryLoadLiveLocations();
+
+function selectPriority(val, el){
+  document.querySelectorAll('.priority-btn').forEach(b=>{ b.classList.remove('tapped','urgent'); });
+  el.classList.add('tapped');
+  if(val === 'Urgent') el.classList.add('urgent');
+  document.getElementById('priority').value = val;
+}
+// default Medium selected visually
+document.addEventListener('DOMContentLoaded', ()=>{
+  const def = document.querySelector('.priority-btn[data-val="Medium"]');
+  if(def) def.classList.add('tapped');
+});
+
+function goStep(n){
+  if(n===2){
+    const loc = document.getElementById('location').value;
+    const desc = document.getElementById('description').value.trim();
+    if(!loc){ document.getElementById('err1').textContent = 'Please select where the issue is.'; return; }
+    if(desc.length < 3){ document.getElementById('err1').textContent = 'Please describe the issue.'; return; }
+    document.getElementById('err1').textContent = '';
+  }
+  document.querySelectorAll('.step').forEach(s=>s.classList.remove('active'));
+  document.querySelector('.step[data-step="'+n+'"]').classList.add('active');
+  if(n<=totalSteps) updateProgress(n);
+}
+
+async function submitReport(){
+  const errEl = document.getElementById('err3'); errEl.textContent='';
+
+  if(document.getElementById('website').value.trim() !== ''){ showOutcome(true); return; } // honeypot
+  if(Date.now() - PAGE_LOAD_TIME < 2500){ showOutcome(true); return; } // too fast to be a real person
+
+  const btn = document.getElementById('submitBtn'), spinner = document.getElementById('spinner'), label = document.getElementById('submitLabel');
+  btn.disabled = true; spinner.style.display='inline-block'; label.textContent='Sending...';
+
+  const clientId = (window.crypto && crypto.randomUUID) ? crypto.randomUUID() : ('cid-'+Date.now()+'-'+Math.random().toString(36).slice(2));
+  const payload = {
+    action: 'submitTicket',
+    location: document.getElementById('location').value,
+    category: 'Other',
+    description: document.getElementById('description').value.trim(),
+    priority: document.getElementById('priority').value,
+    reportedByType: 'Guest',
+    reporterName: document.getElementById('reporterName').value.trim(),
+    reporterContact: document.getElementById('reporterContact').value.trim(),
+    clientId: clientId
+  };
+  const qs = Object.entries(payload).map(([k,v])=>k+'='+encodeURIComponent(v)).join('&');
+
+  let result = null;
+  try{
+    const res = await fetch(API_URL + '?' + qs);
+    result = await res.json();
+    if(!result.success) throw new Error(result.error || 'Unknown error');
+  }catch(e){
+    console.warn('Report issue:', e);
+  }finally{
+    btn.disabled=false; spinner.style.display='none'; label.textContent='Send Report';
+    showOutcome(false, result);
+  }
+}
+
+function showOutcome(silentFail, result){
+  const el = document.getElementById('outcome');
+  if(silentFail || (result && result.success)){
+    const ticketId = result && result.ticketId ? result.ticketId : '';
+    el.innerHTML = `
+      <div class="success-icon">✓</div>
+      <h1>Thanks — got it.</h1>
+      <p class="sub">Your report has been sent to our facilities team.</p>
+      ${ticketId ? `<div class="idcard"><div class="lbl">Reference</div><div class="code">${ticketId}</div></div>` : ''}
+      <p class="muted-note">We appreciate you taking the time to let us know. Our team will take a look shortly.</p>
+    `;
+  } else {
+    el.innerHTML = `
+      <div class="success-icon" style="border-color:#e77;background:rgba(231,119,119,0.12)">!</div>
+      <h1>Almost there.</h1>
+      <p class="sub">We had trouble sending this automatically. Please let a staff member know directly so nothing gets missed.</p>
+    `;
+  }
+  document.querySelectorAll('.step').forEach(s=>s.classList.remove('active'));
+  document.querySelector('.step[data-step="4"]').classList.add('active');
+}
+</script>
+</body>
+</html>
