@@ -1,0 +1,425 @@
+<!DOCTYPE html>
+<html lang="en">
+<!--
+  THE WHITE HOUSE GH — TABLE ORDER PAGE (v1.0, paired with Code.gs v4.9)
+
+  This is what a customer sees after scanning the QR code at their
+  table. It reads ?table=N from the URL, shows the drinks + food
+  menu, lets them build a cart, and submits the order. Nothing here
+  touches stock or revenue — that only happens when staff mark the
+  order Paid on the bar dashboard.
+
+  OFFLINE SAFETY: if the connection drops right when they submit, the
+  order is saved on THEIR PHONE (localStorage) and retried
+  automatically every few seconds and the moment the connection comes
+  back — same pattern as the bar dashboard's offline queue. As long as
+  they don't close the browser tab, the order will get through.
+
+  SETUP: fill in API_URL below with the SAME /exec URL as your bar
+  dashboard (same Apps Script deployment). Fill in nothing else —
+  MoMo number/name come from the backend automatically.
+-->
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>The White House GH — Order</title>
+<link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Syne:wght@400;600;700;800&display=swap" rel="stylesheet">
+<style>
+:root{--black:#0a0a0a;--surface:#111111;--card:#181818;--border:#2a2a2a;--gold:#f5a623;--gold-dim:#c9861a;--teal:#3fb6a8;--red:#ef4444;--green:#22c55e;--text:#f2f2f2;--text-dim:#b5b5b5;--muted:#888;}
+*{margin:0;padding:0;box-sizing:border-box;}
+body{background:var(--black);color:var(--text);font-family:'Syne',sans-serif;min-height:100vh;padding-bottom:110px;}
+.header{background:var(--surface);border-bottom:1px solid var(--border);padding:16px 18px;text-align:center;position:sticky;top:0;z-index:50;}
+.header .logo{font-size:17px;font-weight:800;letter-spacing:1px;color:var(--gold);}
+.header .table-pill{display:inline-block;margin-top:6px;background:var(--border);color:var(--teal);font-family:'Space Mono',monospace;font-size:12px;padding:4px 12px;border-radius:20px;}
+.main{padding:14px 14px 0;max-width:640px;margin:0 auto;}
+.tab-row{display:flex;gap:6px;overflow-x:auto;padding-bottom:4px;margin-bottom:12px;}
+.tab-pill{flex-shrink:0;background:var(--surface);border:1px solid var(--border);color:var(--text-dim);padding:7px 14px;border-radius:20px;font-size:11px;font-weight:700;cursor:pointer;font-family:'Syne',sans-serif;}
+.tab-pill.active{background:var(--gold);color:var(--black);border-color:var(--gold);}
+.search-input{background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:12px 14px;color:var(--text);font-size:14px;width:100%;margin-bottom:12px;outline:none;font-family:'Syne',sans-serif;}
+.search-input:focus{border-color:var(--gold);}
+.menu-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;}
+.menu-item{position:relative;background:var(--card);border:1px solid var(--border);border-radius:10px;padding:14px;cursor:pointer;text-align:left;}
+.menu-item.in-cart{border-color:var(--gold);background:#1e1706;}
+.menu-item .mi-name{font-size:15px;font-weight:800;line-height:1.25;}
+.menu-item .mi-cat{font-size:10px;color:var(--muted);margin-top:3px;}
+.menu-item .mi-price{font-size:13px;color:var(--gold-dim);font-family:'Space Mono',monospace;margin-top:8px;font-weight:700;}
+.menu-item .mi-qty{position:absolute;top:8px;right:10px;background:var(--gold);color:var(--black);font-family:'Space Mono',monospace;font-weight:800;font-size:12px;border-radius:10px;padding:2px 8px;}
+.empty{text-align:center;padding:30px 10px;color:var(--muted);font-size:13px;}
+.loading{text-align:center;padding:40px 10px;color:var(--muted);font-size:13px;font-family:'Space Mono',monospace;}
+
+.cart-bar{position:fixed;bottom:0;left:0;right:0;background:var(--surface);border-top:1px solid var(--gold);padding:14px 16px;display:none;align-items:center;justify-content:space-between;z-index:60;}
+.cart-bar.show{display:flex;}
+.cart-bar .cb-info{font-size:13px;}
+.cart-bar .cb-total{color:var(--gold);font-weight:800;font-family:'Space Mono',monospace;font-size:16px;}
+.cart-bar button{background:var(--gold);color:var(--black);border:none;padding:11px 20px;border-radius:8px;font-weight:800;font-size:13px;cursor:pointer;font-family:'Syne',sans-serif;}
+
+.modal-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,0.85);z-index:100;align-items:flex-end;justify-content:center;}
+.modal-overlay.show{display:flex;}
+.modal-sheet{background:var(--surface);border-radius:16px 16px 0 0;padding:20px;max-width:640px;width:100%;max-height:88vh;overflow-y:auto;}
+.modal-title{font-size:16px;font-weight:800;color:var(--gold);margin-bottom:14px;display:flex;justify-content:space-between;align-items:center;}
+.modal-title .close-x{cursor:pointer;color:var(--muted);font-size:20px;}
+.cart-row{display:flex;align-items:center;gap:10px;background:var(--card);border:1px solid var(--border);border-radius:8px;padding:10px;margin-bottom:8px;}
+.cart-row .cr-name{flex:1;font-size:13px;font-weight:700;}
+.cart-row .cr-name .cr-price{display:block;font-size:10px;color:var(--muted);font-weight:400;font-family:'Space Mono',monospace;margin-top:2px;}
+.qty-stepper{display:flex;align-items:center;gap:8px;}
+.qty-stepper button{background:var(--border);border:none;color:var(--text);width:26px;height:26px;border-radius:6px;font-weight:800;font-size:14px;cursor:pointer;}
+.qty-stepper span{font-family:'Space Mono',monospace;font-size:13px;width:18px;text-align:center;}
+.cart-line-total{font-family:'Space Mono',monospace;font-size:13px;color:var(--gold);width:60px;text-align:right;}
+.subtotal-row{display:flex;justify-content:space-between;padding:14px 4px;border-top:1px solid var(--border);margin-top:6px;font-size:15px;font-weight:800;}
+.subtotal-row span:last-child{color:var(--gold);font-family:'Space Mono',monospace;font-size:19px;}
+.pay-options{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:14px 0;}
+.pay-option{background:var(--card);border:2px solid var(--border);border-radius:10px;padding:16px 10px;text-align:center;cursor:pointer;}
+.pay-option.selected{border-color:var(--gold);background:#1e1706;}
+.pay-option .po-icon{font-size:22px;}
+.pay-option .po-label{font-size:13px;font-weight:800;margin-top:6px;}
+.field-label{font-size:11px;color:var(--text-dim);font-weight:700;letter-spacing:0.5px;margin:10px 0 4px;text-transform:uppercase;}
+.btn{background:var(--gold);color:var(--black);border:none;padding:14px;border-radius:8px;font-size:14px;font-weight:800;width:100%;cursor:pointer;font-family:'Syne',sans-serif;margin-top:8px;}
+.btn:disabled{opacity:0.5;}
+.btn.secondary{background:var(--border);color:var(--text);}
+.error-msg{color:var(--red);font-size:12px;margin-top:8px;}
+.momo-box{background:var(--surface);border:1px solid var(--teal);border-radius:8px;padding:14px;font-size:13px;line-height:1.7;margin-top:10px;}
+.momo-box b{color:var(--teal);}
+.confirm-screen{text-align:center;padding:20px 6px;}
+.confirm-screen .ok-badge{font-size:44px;}
+.confirm-screen h2{color:var(--gold);font-size:18px;margin:10px 0 4px;}
+.confirm-screen .order-id{font-family:'Space Mono',monospace;color:var(--text-dim);font-size:12px;}
+.pending-note{background:#0f1a2a;border:1px solid var(--teal);border-radius:8px;padding:12px 14px;font-size:12px;line-height:1.6;margin:14px 0;color:#cfeceb;}
+</style>
+</head>
+<body>
+
+<div class="header">
+  <div class="logo">THE WHITE HOUSE GH</div>
+  <div class="table-pill" id="tablePill">Table —</div>
+</div>
+
+<div class="main">
+  <div id="noTableBox" style="display:none;margin-bottom:14px">
+    <div class="field-label">Enter your table number</div>
+    <input class="search-input" id="manualTableInput" placeholder="e.g. 12" inputmode="numeric">
+    <button class="btn" onclick="confirmManualTable()">CONTINUE</button>
+  </div>
+
+  <div id="menuArea">
+    <div class="tab-row" id="menuTabs"></div>
+    <input class="search-input" id="menuSearch" placeholder="Search menu..." oninput="renderMenu()">
+    <div class="menu-grid" id="menuGrid"><div class="loading">Loading menu…</div></div>
+  </div>
+</div>
+
+<div class="cart-bar" id="cartBar">
+  <div class="cb-info"><span id="cbCount">0</span> items<br><span class="cb-total" id="cbTotal">GHS 0.00</span></div>
+  <button onclick="openCartModal()">VIEW ORDER</button>
+</div>
+
+<div class="modal-overlay" id="cartModal">
+  <div class="modal-sheet">
+    <div class="modal-title"><span>Your Order</span><span class="close-x" onclick="closeCartModal()">&times;</span></div>
+    <div id="cartRows"></div>
+    <div class="subtotal-row"><span>Total</span><span id="modalTotal">GHS 0.00</span></div>
+
+    <div class="field-label">How will you pay?</div>
+    <div class="pay-options">
+      <div class="pay-option" id="payCash" onclick="selectPayment('Cash')">
+        <div class="po-icon">&#128181;</div><div class="po-label">Cash</div>
+      </div>
+      <div class="pay-option" id="payMomo" onclick="selectPayment('MoMo')">
+        <div class="po-icon">&#128241;</div><div class="po-label">MoMo</div>
+      </div>
+    </div>
+
+    <div class="field-label">Phone number (optional — for loyalty points)</div>
+    <input class="search-input" id="custPhone" placeholder="e.g. 0241234567">
+
+    <div id="submitError" class="error-msg"></div>
+    <button class="btn" id="submitBtn" onclick="submitOrder()" disabled>SELECT A PAYMENT METHOD</button>
+    <button class="btn secondary" onclick="closeCartModal()">KEEP BROWSING MENU</button>
+  </div>
+</div>
+
+<div class="modal-overlay" id="confirmModal">
+  <div class="modal-sheet">
+    <div class="confirm-screen" id="confirmContent"></div>
+  </div>
+</div>
+
+<script>
+const API_URL = 'https://script.google.com/macros/s/AKfycbyycYKCEtRchk0eToXIlMLgs3RmWIsKuUppD3UprPO8zLi9N5a9PIgn9uN4IKeip24E/exec'; // same deployment as the bar dashboard
+
+let tableNumber = null;
+let menu = [];
+let momoNumber = '';
+let momoName = '';
+let cart = {};
+let activeCategory = 'All';
+let selectedPayment = null;
+
+const PENDING_KEY = 'whgh_table_order_pending_v1';
+
+function genClientId(){
+  if(window.crypto && crypto.randomUUID) return crypto.randomUUID();
+  return 'cid-' + Date.now() + '-' + Math.random().toString(36).slice(2);
+}
+
+function init(){
+  const params = new URLSearchParams(window.location.search);
+  const t = params.get('table');
+  if(t && t.trim()){
+    tableNumber = t.trim();
+    document.getElementById('tablePill').textContent = 'Table ' + tableNumber;
+  }else{
+    document.getElementById('noTableBox').style.display = 'block';
+    document.getElementById('tablePill').textContent = 'No table set';
+  }
+  loadMenu();
+  resumePendingOrder();
+}
+
+function confirmManualTable(){
+  const v = document.getElementById('manualTableInput').value.trim();
+  if(!v){ return; }
+  tableNumber = v;
+  document.getElementById('tablePill').textContent = 'Table ' + tableNumber;
+  document.getElementById('noTableBox').style.display = 'none';
+}
+
+async function loadMenu(){
+  try{
+    const res = await fetch(API_URL + '?action=getMenuPublic&t=' + Date.now());
+    const data = await res.json();
+    if(!data.success) throw new Error(data.error || 'Could not load menu');
+    menu = data.menu || [];
+    momoNumber = data.momoNumber || '';
+    momoName = data.momoName || '';
+    renderTabs();
+    renderMenu();
+  }catch(e){
+    document.getElementById('menuGrid').innerHTML = '<div class="empty" style="grid-column:1/-1">Could not load the menu — check your connection and reload the page.</div>';
+  }
+}
+
+function renderTabs(){
+  const counts = {};
+  menu.forEach(m => { const c = m.category || 'Other'; counts[c] = (counts[c]||0)+1; });
+  const cats = Object.keys(counts).sort((a,b)=>counts[b]-counts[a]);
+  if(!cats.includes(activeCategory) && activeCategory !== 'All') activeCategory = 'All';
+  const tabs = [{key:'All', label:'All'}, ...cats.map(c=>({key:c, label:c}))];
+  const row = document.getElementById('menuTabs');
+  row.innerHTML = '';
+  tabs.forEach(t => {
+    const btn = document.createElement('button');
+    btn.className = 'tab-pill' + (activeCategory===t.key?' active':'');
+    btn.textContent = t.label;
+    btn.onclick = () => { activeCategory = t.key; renderTabs(); renderMenu(); };
+    row.appendChild(btn);
+  });
+}
+
+function renderMenu(){
+  const q = (document.getElementById('menuSearch').value||'').toLowerCase();
+  let items = menu;
+  if(activeCategory !== 'All') items = items.filter(m => (m.category||'Other') === activeCategory);
+  if(q) items = items.filter(m => m.item.toLowerCase().includes(q));
+  const grid = document.getElementById('menuGrid');
+  if(items.length === 0){ grid.innerHTML = '<div class="empty" style="grid-column:1/-1">No items match</div>'; return; }
+  grid.innerHTML = '';
+  items.forEach(m => {
+    const qty = cart[m.item] || 0;
+    const el = document.createElement('div');
+    el.className = 'menu-item' + (qty>0 ? ' in-cart' : '');
+    el.innerHTML = `${qty>0 ? `<span class="mi-qty">${qty}</span>` : ''}
+      <div class="mi-name"></div>
+      <div class="mi-cat"></div>
+      <div class="mi-price">GHS ${m.price.toFixed(2)}</div>`;
+    el.querySelector('.mi-name').textContent = m.item;
+    el.querySelector('.mi-cat').textContent = m.category || '';
+    el.onclick = () => { cart[m.item] = (cart[m.item]||0) + 1; renderMenu(); updateCartBar(); };
+    grid.appendChild(el);
+  });
+}
+
+function cartCount(){ return Object.values(cart).reduce((a,b)=>a+b,0); }
+function cartTotal(){
+  let total = 0;
+  Object.keys(cart).forEach(name => {
+    const m = menu.find(mm => mm.item === name);
+    if(m) total += m.price * cart[name];
+  });
+  return total;
+}
+
+function updateCartBar(){
+  const bar = document.getElementById('cartBar');
+  const count = cartCount();
+  if(count === 0){ bar.classList.remove('show'); return; }
+  bar.classList.add('show');
+  document.getElementById('cbCount').textContent = count;
+  document.getElementById('cbTotal').textContent = 'GHS ' + cartTotal().toFixed(2);
+}
+
+function setQty(name, qty){
+  qty = Math.max(0, Math.floor(qty)||0);
+  if(qty <= 0) delete cart[name]; else cart[name] = qty;
+  renderMenu(); updateCartBar(); renderCartModal();
+}
+
+function openCartModal(){ document.getElementById('cartModal').classList.add('show'); renderCartModal(); }
+function closeCartModal(){ document.getElementById('cartModal').classList.remove('show'); }
+
+function selectPayment(method){
+  selectedPayment = method;
+  document.getElementById('payCash').classList.toggle('selected', method==='Cash');
+  document.getElementById('payMomo').classList.toggle('selected', method==='MoMo');
+  const btn = document.getElementById('submitBtn');
+  btn.disabled = false;
+  btn.textContent = method === 'MoMo' ? 'SUBMIT ORDER — PAY BY MOMO' : 'SUBMIT ORDER — PAY CASH ON DELIVERY';
+}
+
+function renderCartModal(){
+  const rowsEl = document.getElementById('cartRows');
+  const names = Object.keys(cart).filter(k => cart[k] > 0);
+  if(names.length === 0){
+    rowsEl.innerHTML = '<div class="empty">Your cart is empty.</div>';
+    document.getElementById('modalTotal').textContent = 'GHS 0.00';
+    return;
+  }
+  rowsEl.innerHTML = names.map(name => {
+    const m = menu.find(mm => mm.item === name);
+    const price = m ? m.price : 0;
+    const qty = cart[name];
+    return `<div class="cart-row" data-name="${encodeURIComponent(name)}">
+      <div class="cr-name"><span class="cr-item-name"></span><span class="cr-price">GHS ${price.toFixed(2)} each</span></div>
+      <div class="qty-stepper"><button class="qd">&minus;</button><span>${qty}</span><button class="qi">+</button></div>
+      <div class="cart-line-total">GHS ${(price*qty).toFixed(2)}</div>
+    </div>`;
+  }).join('');
+  rowsEl.querySelectorAll('.cart-row').forEach(row => {
+    const name = decodeURIComponent(row.dataset.name);
+    row.querySelector('.cr-item-name').textContent = name;
+    row.querySelector('.qi').onclick = () => setQty(name, (cart[name]||0)+1);
+    row.querySelector('.qd').onclick = () => setQty(name, (cart[name]||0)-1);
+  });
+  document.getElementById('modalTotal').textContent = 'GHS ' + cartTotal().toFixed(2);
+}
+
+async function submitOrder(){
+  if(!tableNumber){ document.getElementById('submitError').textContent = 'No table number set — scan the QR code again or enter it manually.'; return; }
+  if(!selectedPayment){ document.getElementById('submitError').textContent = 'Choose Cash or MoMo first.'; return; }
+  const names = Object.keys(cart).filter(k => cart[k] > 0);
+  if(names.length === 0){ document.getElementById('submitError').textContent = 'Your cart is empty.'; return; }
+
+  const items = names.map(name => ({item: name, qty: cart[name]}));
+  const phone = document.getElementById('custPhone').value.trim();
+  const clientId = genClientId();
+
+  const btn = document.getElementById('submitBtn');
+  btn.disabled = true;
+  btn.textContent = 'Sending order...';
+  document.getElementById('submitError').textContent = '';
+
+  const orderPayload = { table: tableNumber, itemsJson: JSON.stringify(items), payment: selectedPayment, phone: phone, clientId: clientId };
+  const result = await trySendOrder(orderPayload);
+
+  if(result.ok){
+    cart = {};
+    updateCartBar();
+    closeCartModal();
+    showConfirmation(result.data, selectedPayment);
+  }else if(result.queued){
+    // Saved locally — will retry automatically. Show a clear "please
+    // wait" screen rather than pretending it succeeded, since we
+    // don't have a real order ID yet.
+    savePendingOrder(orderPayload);
+    cart = {};
+    updateCartBar();
+    closeCartModal();
+    showQueuedScreen();
+  }else{
+    document.getElementById('submitError').textContent = result.error || 'Could not submit order — please try again.';
+    btn.disabled = false;
+    btn.textContent = selectedPayment === 'MoMo' ? 'SUBMIT ORDER — PAY BY MOMO' : 'SUBMIT ORDER — PAY CASH ON DELIVERY';
+  }
+}
+
+async function trySendOrder(payload){
+  try{
+    const url = API_URL + '?action=placeTableOrder&table=' + encodeURIComponent(payload.table) +
+      '&itemsJson=' + encodeURIComponent(payload.itemsJson) +
+      '&payment=' + encodeURIComponent(payload.payment) +
+      '&phone=' + encodeURIComponent(payload.phone) +
+      '&clientId=' + encodeURIComponent(payload.clientId) + '&t=' + Date.now();
+    const res = await fetch(url);
+    if(!res.ok) throw new Error('status ' + res.status);
+    const data = await res.json();
+    if(!data.success) return { ok: false, error: data.error || 'Order failed' };
+    return { ok: true, data: data };
+  }catch(e){
+    return { ok: false, queued: true, error: 'No connection' };
+  }
+}
+
+function savePendingOrder(payload){
+  const queue = getPendingQueue();
+  queue.push(payload);
+  localStorage.setItem(PENDING_KEY, JSON.stringify(queue));
+}
+function getPendingQueue(){
+  try{ return JSON.parse(localStorage.getItem(PENDING_KEY) || '[]'); }catch(e){ return []; }
+}
+function clearPendingOrder(clientId){
+  const queue = getPendingQueue().filter(p => p.clientId !== clientId);
+  localStorage.setItem(PENDING_KEY, JSON.stringify(queue));
+}
+
+async function resumePendingOrder(){
+  const queue = getPendingQueue();
+  if(queue.length === 0) return;
+  for(const payload of queue){
+    const result = await trySendOrder(payload);
+    if(result.ok){
+      clearPendingOrder(payload.clientId);
+      showConfirmation(result.data, payload.payment);
+      return;
+    }
+  }
+  showQueuedScreen();
+  setTimeout(resumePendingOrder, 5000);
+}
+window.addEventListener('online', resumePendingOrder);
+
+function showQueuedScreen(){
+  const el = document.getElementById('confirmContent');
+  el.innerHTML = `
+    <div class="ok-badge">&#9203;</div>
+    <h2>No connection right now</h2>
+    <p style="font-size:13px;color:var(--text-dim);margin-top:6px">Your order is saved on this phone and will send automatically the moment you're back online. Please don't close this tab.</p>
+    <div class="pending-note">Keep this page open — it will keep trying every few seconds and show your order confirmation as soon as it goes through.</div>
+    <button class="btn secondary" onclick="document.getElementById('confirmModal').classList.remove('show')">OK, KEEP WAITING</button>`;
+  document.getElementById('confirmModal').classList.add('show');
+}
+
+function showConfirmation(data, payment){
+  const el = document.getElementById('confirmContent');
+  let payHtml = '';
+  if(payment === 'MoMo'){
+    payHtml = `<div class="momo-box">
+      Send <b>GHS ${data.total.toFixed(2)}</b> via MoMo to<br>
+      <b>${momoNumber || '(number not set yet — ask your waiter)'}</b>${momoName ? ' — ' + momoName : ''}<br><br>
+      Then show the confirmation message on your phone to your waiter when they bring your order.
+    </div>`;
+  }else{
+    payHtml = `<div class="momo-box">Pay <b>GHS ${data.total.toFixed(2)}</b> in cash when your order is delivered.</div>`;
+  }
+  el.innerHTML = `
+    <div class="ok-badge">&#9989;</div>
+    <h2>Order sent!</h2>
+    <div class="order-id">Order ${data.orderId} &middot; Table ${tableNumber}</div>
+    ${payHtml}
+    <button class="btn" onclick="document.getElementById('confirmModal').classList.remove('show')">ORDER SOMETHING ELSE</button>`;
+  document.getElementById('confirmModal').classList.add('show');
+}
+
+init();
+</script>
+</body>
+</html>
