@@ -1,16 +1,22 @@
 <!DOCTYPE html>
 <html lang="en">
 <!--
-  THE WHITE HOUSE GH — CANTEEN ORDER PAGE (v1.0, paired with Code.gs v5.0)
+  THE WHITE HOUSE GH — CANTEEN ORDER PAGE (v1.1, paired with Code.gs v5.1)
+
+  v1.1: added Table (1-50) as a location option alongside Pickup,
+  Delivery, Room Number, Bar Area, VIP Area, Pool, Stage Area — same
+  location picker as order.html now uses. Name and phone/membership
+  number are both required on every order (previously phone was
+  optional) so staff always know whose order it is, at any location,
+  and so a first-time customer gets registered as a member correctly
+  when the order is marked Paid.
 
   This is the customer-facing food ordering page — separate from
-  order.html (which is for bar/table drink orders). Instead of a
-  table number, the customer picks where the order is for: Pickup,
-  Delivery, Room Number, Bar Area, VIP Area, Pool, or Stage Area.
-  Orders go to the 🥡 Canteen Orders sheet — a completely separate
-  sheet and live queue from 📋 Table Orders, so canteen staff (on
-  canteen-dashboard.html) and bar staff (on bar-dashboard.html) each
-  only see their own incoming orders.
+  order.html (which is for bar/table drink orders). Orders go to the
+  🥡 Canteen Orders sheet — a completely separate sheet and live queue
+  from 📋 Table Orders, so canteen staff (on canteen-dashboard.html)
+  and bar staff (on bar-dashboard.html) each only see their own
+  incoming orders.
 
   Nothing here touches stock or revenue — that only happens when
   canteen staff mark the order Paid on canteen-dashboard.html.
@@ -111,6 +117,7 @@ body{background:var(--black);color:var(--text);font-family:'Syne',sans-serif;min
     <div class="loc-grid" id="locationGrid"><div class="empty" style="grid-column:1/-1">Loading options…</div></div>
     <div id="locationDetailBox" style="display:none">
       <div class="field-label" id="locationDetailLabel">Details</div>
+      <select class="search-input" id="locationDetailSelect" style="display:none"></select>
       <input class="search-input" id="locationDetailInput" placeholder="">
     </div>
   </div>
@@ -143,8 +150,12 @@ body{background:var(--black);color:var(--text);font-family:'Syne',sans-serif;min
       </div>
     </div>
 
-    <div class="field-label">Phone number (optional — for loyalty points)</div>
-    <input class="search-input" id="custPhone" placeholder="e.g. 0241234567">
+    <div class="field-label">Your name (required)</div>
+    <input class="search-input" id="custName" placeholder="e.g. Ama Mensah">
+
+    <div class="field-label">Phone number or membership number (required)</div>
+    <input class="search-input" id="custPhone" placeholder="e.g. 0241234567 or THWGH12">
+    <div style="font-size:11px;color:var(--text-dim);margin:-6px 0 12px;line-height:1.5">Already a member? Enter your membership number. First time? Just enter your phone number — we'll set you up automatically.</div>
 
     <div id="submitError" class="error-msg"></div>
     <button class="btn" id="submitBtn" onclick="submitOrder()" disabled>SELECT A PAYMENT METHOD</button>
@@ -185,7 +196,12 @@ function init(){
   loadFoodMenu(function(){
     if(loc && locationTypes.indexOf(loc) !== -1){
       selectLocation(loc, true);
-      if(detail) { locationDetail = detail; }
+      if(detail) {
+        locationDetail = detail;
+        const detailInput = document.getElementById('locationDetailInput');
+        const detailSelect = document.getElementById('locationDetailSelect');
+        if(loc === 'Table') detailSelect.value = detail; else detailInput.value = detail;
+      }
     }
   });
   resumePendingOrder();
@@ -231,19 +247,38 @@ function selectLocation(loc, skipDetailReset){
   const detailBox = document.getElementById('locationDetailBox');
   const detailLabel = document.getElementById('locationDetailLabel');
   const detailInput = document.getElementById('locationDetailInput');
-  if(loc === 'Room Number'){
+  const detailSelect = document.getElementById('locationDetailSelect');
+
+  if(loc === 'Table'){
+    detailBox.style.display = 'block';
+    detailLabel.textContent = 'Table Number';
+    detailInput.style.display = 'none';
+    detailSelect.style.display = 'block';
+    if(detailSelect.options.length === 0){
+      detailSelect.innerHTML = '<option value="">Select a table...</option>' +
+        Array.from({length:50}, (_,i)=>i+1).map(n=>`<option value="${n}">Table ${n}</option>`).join('');
+    }
+    detailSelect.value = locationDetail || '';
+    detailSelect.onchange = () => { locationDetail = detailSelect.value; };
+  }else if(loc === 'Room Number'){
     detailBox.style.display = 'block';
     detailLabel.textContent = 'Room Number';
+    detailSelect.style.display = 'none';
+    detailInput.style.display = 'block';
     detailInput.placeholder = 'e.g. 204';
+    detailInput.value = locationDetail;
+    detailInput.oninput = () => { locationDetail = detailInput.value.trim(); };
   }else if(loc === 'Delivery'){
     detailBox.style.display = 'block';
     detailLabel.textContent = 'Delivery Address / Description';
+    detailSelect.style.display = 'none';
+    detailInput.style.display = 'block';
     detailInput.placeholder = 'e.g. 12 Ridge Avenue, near the junction';
+    detailInput.value = locationDetail;
+    detailInput.oninput = () => { locationDetail = detailInput.value.trim(); };
   }else{
     detailBox.style.display = 'none';
   }
-  detailInput.value = locationDetail;
-  detailInput.oninput = () => { locationDetail = detailInput.value.trim(); };
 }
 
 function renderTabs(){
@@ -352,16 +387,23 @@ function renderCartModal(){
 
 async function submitOrder(){
   if(!locationType){ document.getElementById('submitError').textContent = 'Please choose where this order is for, above the menu.'; closeCartModal(); window.scrollTo({top:0, behavior:'smooth'}); return; }
+  if(locationType === 'Table' && !locationDetail){
+    document.getElementById('submitError').textContent = 'Please choose a table number above the menu.';
+    closeCartModal(); window.scrollTo({top:0, behavior:'smooth'}); return;
+  }
   if((locationType === 'Delivery' || locationType === 'Room Number') && !locationDetail){
     document.getElementById('submitError').textContent = locationType === 'Delivery' ? 'Please add a delivery address above the menu.' : 'Please add the room number above the menu.';
     closeCartModal(); window.scrollTo({top:0, behavior:'smooth'}); return;
   }
+  const custName = document.getElementById('custName').value.trim();
+  const phone = document.getElementById('custPhone').value.trim();
+  if(!custName){ document.getElementById('submitError').textContent = 'Please enter your name.'; return; }
+  if(!phone){ document.getElementById('submitError').textContent = 'Please enter your phone number or membership number.'; return; }
   if(!selectedPayment){ document.getElementById('submitError').textContent = 'Choose Cash or MoMo first.'; return; }
   const names = Object.keys(cart).filter(k => cart[k] > 0);
   if(names.length === 0){ document.getElementById('submitError').textContent = 'Your cart is empty.'; return; }
 
   const items = names.map(name => ({item: name, qty: cart[name]}));
-  const phone = document.getElementById('custPhone').value.trim();
   const clientId = genClientId();
 
   const btn = document.getElementById('submitBtn');
@@ -369,7 +411,7 @@ async function submitOrder(){
   btn.textContent = 'Sending order...';
   document.getElementById('submitError').textContent = '';
 
-  const orderPayload = { locationType: locationType, locationDetail: locationDetail, itemsJson: JSON.stringify(items), payment: selectedPayment, phone: phone, clientId: clientId };
+  const orderPayload = { locationType: locationType, locationDetail: locationDetail, itemsJson: JSON.stringify(items), payment: selectedPayment, customerName: custName, phone: phone, clientId: clientId };
   const result = await trySendOrder(orderPayload);
 
   if(result.ok){
@@ -396,6 +438,7 @@ async function trySendOrder(payload){
       '&locationDetail=' + encodeURIComponent(payload.locationDetail) +
       '&itemsJson=' + encodeURIComponent(payload.itemsJson) +
       '&payment=' + encodeURIComponent(payload.payment) +
+      '&customerName=' + encodeURIComponent(payload.customerName) +
       '&phone=' + encodeURIComponent(payload.phone) +
       '&clientId=' + encodeURIComponent(payload.clientId) + '&t=' + Date.now();
     const res = await fetch(url);
