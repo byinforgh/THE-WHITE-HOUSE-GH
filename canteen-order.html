@@ -1,7 +1,12 @@
 <!DOCTYPE html>
 <html lang="en">
 <!--
-  THE WHITE HOUSE GH — CANTEEN ORDER PAGE (v1.1, paired with Code.gs v5.1)
+  THE WHITE HOUSE GH — CANTEEN ORDER PAGE (v1.2, paired with Code.gs v5.2)
+
+  v1.2: the "no connection, retrying" screen now backs off instead of
+  retrying every 5 seconds flat — if the backend is genuinely
+  overloaded (not just this one phone's wifi), everyone's phone
+  hammering it every 5s makes that worse, not better.
 
   v1.1: added Table (1-50) as a location option alongside Pickup,
   Delivery, Room Number, Bar Area, VIP Area, Pool, Stage Area — same
@@ -471,14 +476,23 @@ async function resumePendingOrder(){
     const result = await trySendOrder(payload);
     if(result.ok){
       clearPendingOrder(payload.clientId);
+      resumeAttempts = 0;
       showConfirmation(result.data, payload.payment);
       return;
     }
   }
   showQueuedScreen();
-  setTimeout(resumePendingOrder, 5000);
+  // v5.2: back off instead of retrying every 5s flat — if the system
+  // is genuinely overloaded (not just this one phone's wifi), a
+  // tight fixed retry from every waiting customer's phone makes that
+  // worse, not better. Capped at 30s so a real reconnect is still
+  // picked up reasonably quickly.
+  resumeAttempts = Math.min(resumeAttempts + 1, 6);
+  const delay = Math.min(30000, 3000 * Math.pow(2, resumeAttempts)) * (0.6 + Math.random() * 0.4);
+  setTimeout(resumePendingOrder, delay);
 }
-window.addEventListener('online', resumePendingOrder);
+let resumeAttempts = 0;
+window.addEventListener('online', function(){ resumeAttempts = 0; resumePendingOrder(); });
 
 function showQueuedScreen(){
   const el = document.getElementById('confirmContent');
