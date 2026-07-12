@@ -1,7 +1,15 @@
 <!DOCTYPE html>
 <html lang="en">
 <!--
-  THE WHITE HOUSE GH — BAR DASHBOARD (v4.9)
+  THE WHITE HOUSE GH — BAR DASHBOARD (v5.0)
+
+  Renamed from dashboard.html in v5.0 — same file, clearer name.
+  Also in v5.0: Incoming Table Orders moved to the very top of the
+  page (above the low-stock banner and metrics), since it's the
+  thing staff need to react to fastest. Canteen/food orders never
+  appear here — they're on the separate canteen-dashboard.html,
+  reading a separate sheet, so bar staff are never interrupted by a
+  food order.
 
   New in v4.9: Incoming Table Orders card — QR table ordering (from
   order.html) shows up here live, with a beep + flash on new orders.
@@ -216,6 +224,13 @@ tr.low-row{background:#1a0a0a;}
   <div class="error-banner" id="errorBanner"></div>
   <div class="pending-banner" id="pendingBanner"></div>
 
+  <div class="card" id="tableOrdersCard">
+    <div class="card-title">&#128203; INCOMING TABLE ORDERS <span style="font-weight:400;color:var(--muted);text-transform:none;letter-spacing:0">(from QR ordering — acting as:)</span>
+      <select class="select-input" id="tableOrderStaffSelect" style="width:auto;display:inline-block;margin-left:8px;padding:4px 10px;font-size:11px"></select>
+    </div>
+    <div id="tableOrdersBody"><div class="empty">Loading table orders...</div></div>
+  </div>
+
   <div class="low-stock-banner" id="lowStockBanner">
     <div class="low-stock-banner-title">&#9888; LOW STOCK — RESTOCK NEEDED</div>
     <div id="lowStockPills"></div>
@@ -230,13 +245,6 @@ tr.low-row{background:#1a0a0a;}
     <div class="tab-row" id="quickSellTabs"></div>
     <div class="quick-sell-grid" id="quickSellGrid"><div class="empty">Loading menu...</div></div>
     <div class="quick-sell-panel" id="quickSellPanel"></div>
-  </div>
-
-  <div class="card" id="tableOrdersCard">
-    <div class="card-title">&#128203; INCOMING TABLE ORDERS <span style="font-weight:400;color:var(--muted);text-transform:none;letter-spacing:0">(from QR ordering — acting as:)</span>
-      <select class="select-input" id="tableOrderStaffSelect" style="width:auto;display:inline-block;margin-left:8px;padding:4px 10px;font-size:11px"></select>
-    </div>
-    <div id="tableOrdersBody"><div class="empty">Loading table orders...</div></div>
   </div>
 
   <div class="two-col">
@@ -329,11 +337,11 @@ tr.low-row{background:#1a0a0a;}
 // live at this same URL.
 const API_URL = 'https://script.google.com/macros/s/AKfycbyycYKCEtRchk0eToXIlMLgs3RmWIsKuUppD3UprPO8zLi9N5a9PIgn9uN4IKeip24E/exec';
 
-// v4.9: the version this dashboard.html was built to work with. If
-// the backend reports anything else (or nothing), that's proof the
-// live deployment is stale — see renderVersionBanner(). MUST match
-// BACKEND_VERSION in Code.gs.
-const EXPECTED_BACKEND_VERSION = '4.9';
+// v5.0: the version this bar-dashboard.html was built to work with.
+// If the backend reports anything else (or nothing), that's proof
+// the live deployment is stale — see renderVersionBanner(). MUST
+// match BACKEND_VERSION in Code.gs.
+const EXPECTED_BACKEND_VERSION = '5.0';
 
 let barData = {stock: [], todayOrders: [], staff: [], topSellers: [], staleStock: [], restockLog: [], revenueByPayment: []};
 let activeStockCategory = 'All';
