@@ -1,0 +1,779 @@
+<!DOCTYPE html>
+<html lang="en">
+<!--
+  THE WHITE HOUSE GH — CANTEEN DASHBOARD (v1.0, paired with Code.gs v5.0)
+
+  Staff-facing dashboard for food orders placed via canteen-order.html.
+  Deliberately a SEPARATE page/queue from bar-dashboard.html — reads
+  the 🥡 Canteen Orders sheet instead of 📋 Table Orders, so canteen
+  staff aren't shown drink orders and bar staff aren't interrupted by
+  food orders. Same lifecycle as the bar: Placed -> Preparing ->
+  Delivered - Awaiting Payment -> Paid (or Cancelled), same offline
+  queue pattern, same idempotent status updates.
+
+  Revenue and stock ARE still recorded in the shared Bar Orders ledger
+  once an order is marked Paid (via the same processSale_ used
+  everywhere else) — so your accounting stays in one place even
+  though the live order queues are separate.
+
+  SETUP: fill in API_URL below with the SAME /exec URL as your other
+  dashboards (same Apps Script deployment).
+-->
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>The White House GH — Canteen Dashboard</title>
+<link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Syne:wght@400;600;700;800&display=swap" rel="stylesheet">
+<style>
+:root{--black:#0a0a0a;--surface:#111111;--card:#181818;--border:#2a2a2a;--gold:#f5a623;--gold-dim:#c9861a;--teal:#3fb6a8;--red:#ef4444;--green:#22c55e;--purple:#8b5cf6;--text:#f2f2f2;--text-dim:#b5b5b5;--muted:#888;}
+*{margin:0;padding:0;box-sizing:border-box;}
+body{background:var(--black);color:var(--text);font-family:'Syne',sans-serif;min-height:100vh;}
+.header{background:var(--surface);border-bottom:1px solid var(--border);padding:16px 24px;display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;z-index:100;flex-wrap:wrap;gap:10px;}
+.brand{display:flex;align-items:center;gap:12px;}
+.brand-logo{height:38px;width:auto;border-radius:6px;display:block;}
+.logo{font-size:18px;font-weight:800;letter-spacing:1px;color:var(--gold);}
+.logo span{color:var(--text-dim);font-weight:400;font-size:11px;display:block;letter-spacing:2px;margin-top:2px;}
+.header-right{display:flex;align-items:center;gap:14px;}
+.last-refresh{font-size:11px;color:var(--muted);font-family:'Space Mono',monospace;}
+.version-pill{font-size:10px;font-family:'Space Mono',monospace;padding:2px 8px;border-radius:10px;margin-left:6px;border:1px solid var(--border);}
+.version-pill.ok{color:var(--green);border-color:var(--green);}
+.version-pill.bad{color:var(--red);border-color:var(--red);}
+.conn-status{font-size:11px;font-family:'Space Mono',monospace;padding:4px 10px;border-radius:20px;background:var(--surface);border:1px solid var(--border);}
+.conn-status.online{color:var(--green);border-color:var(--green);}
+.conn-status.offline{color:var(--red);border-color:var(--red);}
+.pending-banner{display:none;background:#0f1a2a;border:1px solid var(--teal);border-radius:8px;padding:14px 18px;margin-bottom:20px;font-size:12px;line-height:1.6;}
+.pending-banner.active{display:block;}
+.pending-banner b{color:var(--teal);}
+.pending-item{display:flex;justify-content:space-between;padding:5px 0;border-bottom:1px solid #16202e;}
+.pending-item:last-of-type{border-bottom:none;}
+.pending-actions{display:flex;gap:8px;margin-top:10px;}
+.pending-actions .btn{width:auto;padding:8px 16px;font-size:11px;}
+.refresh-btn{background:var(--border);border:none;color:var(--text);padding:8px 16px;border-radius:5px;cursor:pointer;font-size:12px;font-weight:700;letter-spacing:1px;font-family:'Syne',sans-serif;}
+.refresh-btn:hover{background:var(--gold);color:var(--black);}
+.main{padding:20px 24px;max-width:1300px;margin:0 auto;}
+.card{background:var(--card);border:1px solid var(--border);border-radius:8px;padding:18px;margin-bottom:16px;}
+.card-title{font-size:11px;font-weight:700;letter-spacing:2px;color:var(--muted);margin-bottom:14px;text-transform:uppercase;}
+table{width:100%;border-collapse:collapse;font-size:12px;}
+th{text-align:left;padding:8px 10px;color:var(--muted);font-weight:700;letter-spacing:1px;border-bottom:1px solid var(--border);font-size:10px;}
+td{padding:7px 10px;border-bottom:1px solid #1a1a1a;}
+.search-input,.select-input{background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:10px 14px;color:var(--text);font-size:13px;font-family:'Syne',sans-serif;width:100%;margin-bottom:10px;outline:none;}
+.search-input:focus,.select-input:focus{border-color:var(--gold);}
+.select-input{appearance:auto;}
+.btn{background:var(--gold);color:var(--black);border:none;padding:10px 18px;border-radius:5px;cursor:pointer;font-size:12px;font-weight:800;letter-spacing:1px;font-family:'Syne',sans-serif;width:100%;}
+.btn:hover{background:var(--gold-dim);}
+.btn:disabled{opacity:0.5;cursor:not-allowed;}
+.empty{text-align:center;padding:24px;color:var(--muted);font-size:12px;}
+.loading{text-align:center;padding:24px;color:var(--muted);font-size:12px;font-family:'Space Mono',monospace;}
+.scroll-table{max-height:420px;overflow-y:auto;}
+.tab-row{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:12px;}
+.tab-pill{background:var(--surface);border:1px solid var(--border);color:var(--text-dim);padding:7px 14px;border-radius:20px;font-size:11px;font-weight:700;letter-spacing:0.5px;cursor:pointer;font-family:'Syne',sans-serif;transition:all .15s;}
+.tab-pill:hover{border-color:var(--gold);color:var(--text);}
+.tab-pill.active{background:var(--gold);color:var(--black);border-color:var(--gold);}
+.tab-pill .tab-count{opacity:0.7;margin-left:4px;}
+.error-banner{display:none;background:#2a1a0a;border:1px solid var(--gold-dim);border-radius:8px;padding:14px 18px;margin-bottom:20px;font-size:12px;line-height:1.6;color:#ffdca8;}
+.error-banner.active{display:block;}
+.error-banner b{color:var(--gold);}
+.version-banner{display:none;background:#2a0a0a;border:1px solid var(--red);border-radius:8px;padding:14px 18px;margin-bottom:20px;font-size:12px;line-height:1.7;color:#ffc9c9;}
+.version-banner.active{display:block;}
+.version-banner b{color:var(--red);}
+.version-banner ol{margin:8px 0 0 18px;padding:0;}
+.version-banner li{margin-bottom:4px;}
+.flash{color:var(--green);}
+.metrics-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px;margin-bottom:20px;}
+.metric-card{background:var(--card);border:1px solid var(--border);border-radius:8px;padding:18px;position:relative;overflow:hidden;}
+.metric-card::before{content:'';position:absolute;top:0;left:0;right:0;height:2px;}
+.metric-card.gold::before{background:var(--gold);}.metric-card.teal::before{background:var(--teal);}.metric-card.green::before{background:var(--green);}
+.metric-label{font-size:10px;font-weight:700;letter-spacing:2px;color:var(--muted);margin-bottom:8px;}
+.metric-value{font-size:30px;font-weight:800;font-family:'Space Mono',monospace;line-height:1;}
+.metric-card.gold .metric-value{color:var(--gold);}.metric-card.teal .metric-value{color:var(--teal);}.metric-card.green .metric-value{color:var(--green);}
+.metric-sub{font-size:11px;color:var(--text-dim);margin-top:6px;}
+
+.quick-sell-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:8px;max-height:280px;overflow-y:auto;margin-top:4px;}
+.quick-sell-item{background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:10px 12px;cursor:pointer;transition:border-color .15s;text-align:left;display:flex;flex-direction:column;gap:2px;position:relative;}
+.quick-sell-item:hover{border-color:var(--gold);}
+.quick-sell-item.in-cart{border-color:var(--gold);background:#1e1706;}
+.quick-sell-item .qs-name{font-size:15px;font-weight:800;line-height:1.25;color:var(--text);}
+.quick-sell-item .qs-price{font-size:11px;color:var(--gold-dim);font-family:'Space Mono',monospace;margin-top:3px;}
+.quick-sell-item .qs-cat{font-size:9px;color:var(--muted);margin-top:1px;}
+.quick-sell-item .qs-cart-qty{position:absolute;top:6px;right:8px;background:var(--gold);color:var(--black);font-family:'Space Mono',monospace;font-weight:800;font-size:11px;border-radius:10px;padding:1px 7px;}
+.quick-sell-panel{display:none;background:var(--surface);border:1px solid var(--gold);border-radius:8px;padding:16px;margin-top:14px;}
+.quick-sell-panel.show{display:block;}
+.quick-sell-panel .qs-title{font-size:13px;font-weight:800;color:var(--gold);margin-bottom:12px;display:flex;justify-content:space-between;align-items:center;}
+.qs-field-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px;}
+.qs-label{font-size:10px;font-weight:700;color:var(--text-dim);letter-spacing:0.5px;margin-bottom:4px;text-transform:uppercase;}
+.qs-warning{font-size:11px;color:var(--red);background:#2a0a0a;border:1px solid var(--red);border-radius:6px;padding:8px 10px;margin-bottom:10px;line-height:1.5;}
+.cart-list{margin-top:4px;}
+.cart-row{display:flex;align-items:center;gap:10px;background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:8px 10px;margin-bottom:6px;}
+.cart-row .cart-name{flex:1;font-size:13px;font-weight:700;min-width:0;}
+.cart-row .cart-name .cart-unit-price{display:block;font-size:10px;color:var(--muted);font-weight:400;font-family:'Space Mono',monospace;margin-top:2px;}
+.cart-qty-stepper{display:flex;align-items:center;gap:6px;}
+.cart-qty-stepper button{background:var(--border);border:none;color:var(--text);width:24px;height:24px;border-radius:5px;cursor:pointer;font-weight:800;font-size:13px;font-family:'Syne',sans-serif;line-height:1;}
+.cart-qty-stepper button:hover{background:var(--gold);color:var(--black);}
+.cart-qty-stepper span{font-family:'Space Mono',monospace;font-size:13px;width:20px;text-align:center;}
+.cart-line-total{font-family:'Space Mono',monospace;font-size:13px;color:var(--gold);width:70px;text-align:right;flex-shrink:0;}
+.cart-remove{background:none;border:none;color:var(--red);cursor:pointer;font-size:16px;line-height:1;padding:2px 4px;flex-shrink:0;}
+.cart-subtotal-row{display:flex;justify-content:space-between;align-items:center;padding:12px 4px;border-top:1px solid var(--border);margin-top:6px;font-size:14px;font-weight:800;}
+.cart-subtotal-row .cart-subtotal-value{color:var(--gold);font-family:'Space Mono',monospace;font-size:18px;}
+
+/* Incoming Canteen Orders */
+.order-card{background:var(--surface);border:1px solid var(--border);border-left:4px solid var(--gold);border-radius:8px;padding:14px 16px;margin-bottom:10px;}
+.order-card.status-placed{border-left-color:var(--gold);}
+.order-card.status-placed.is-new{animation:orderFlash 1.4s ease-in-out 3;}
+.order-card.status-preparing{border-left-color:var(--teal);}
+.order-card.status-delivered{border-left-color:#c9861a;}
+@keyframes orderFlash{0%,100%{background:var(--surface);}50%{background:#3a2a06;}}
+.order-card-top{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:8px;}
+.order-card-loc{font-weight:800;font-size:14px;}
+.order-card-loc small{display:block;font-weight:400;font-size:11px;color:var(--text-dim);font-family:'Space Mono',monospace;margin-top:2px;}
+.order-card-age{font-size:10px;color:var(--muted);font-family:'Space Mono',monospace;}
+.order-status-pill{font-size:9px;font-weight:800;letter-spacing:0.5px;padding:3px 9px;border-radius:12px;text-transform:uppercase;}
+.order-status-pill.placed{background:#2a2006;color:var(--gold);}
+.order-status-pill.preparing{background:#0f2a27;color:var(--teal);}
+.order-status-pill.delivered{background:#2a1f06;color:#e0aa50;}
+.order-items-list{font-size:12px;color:var(--text-dim);margin:6px 0 10px;line-height:1.6;}
+.order-card-footer{display:flex;justify-content:space-between;align-items:center;gap:10px;}
+.order-total{font-family:'Space Mono',monospace;font-weight:800;color:var(--gold);}
+.order-pay-badge{font-size:10px;color:var(--muted);font-family:'Space Mono',monospace;}
+.order-actions{display:flex;gap:6px;flex-wrap:wrap;margin-top:10px;}
+.order-actions button{flex:1;min-width:110px;padding:8px 10px;font-size:11px;border-radius:6px;border:none;font-weight:800;cursor:pointer;font-family:'Syne',sans-serif;}
+.oa-primary{background:var(--gold);color:var(--black);}
+.oa-cancel{background:transparent;border:1px solid var(--red)!important;color:var(--red);}
+.order-momo-input{background:var(--card);border:1px solid var(--teal);border-radius:6px;padding:8px 10px;font-size:12px;color:var(--text);width:100%;margin-bottom:6px;font-family:'Syne',sans-serif;}
+.food-menu-list{max-height:360px;overflow-y:auto;}
+.rank-row{display:flex;align-items:center;gap:12px;padding:9px 4px;border-bottom:1px solid #1a1a1a;}
+.rank-row:last-child{border-bottom:none;}
+.rank-info{flex:1;min-width:0;}
+.rank-name{font-size:12px;font-weight:700;}
+.rank-sub{font-size:10px;color:var(--muted);font-family:'Space Mono',monospace;margin-top:2px;}
+.rank-value{font-family:'Space Mono',monospace;font-weight:700;font-size:12px;color:var(--teal);flex-shrink:0;}
+</style>
+</head>
+<body>
+<div class="header">
+  <div class="brand">
+    <img src="logo.jpg" alt="The White House GH" class="brand-logo" onerror="this.style.display='none'">
+    <div class="logo">THE WHITE HOUSE GH <span>CANTEEN DASHBOARD</span></div>
+  </div>
+  <div class="header-right"><span class="conn-status" id="connStatus">&#9679; checking...</span><span class="last-refresh" id="lastRefresh">Loading...</span><button class="refresh-btn" onclick="loadAll()">&#8635; REFRESH</button></div>
+</div>
+
+<div class="main">
+  <div class="version-banner" id="versionBanner"></div>
+  <div class="error-banner" id="errorBanner"></div>
+  <div class="pending-banner" id="pendingBanner"></div>
+
+  <div class="card" id="canteenOrdersCard">
+    <div class="card-title">&#127859; INCOMING CANTEEN ORDERS <span style="font-weight:400;color:var(--muted);text-transform:none;letter-spacing:0">(from canteen-order.html — acting as:)</span>
+      <select class="select-input" id="canteenStaffSelect" style="width:auto;display:inline-block;margin-left:8px;padding:4px 10px;font-size:11px"></select>
+    </div>
+    <div id="canteenOrdersBody"><div class="empty">Loading canteen orders...</div></div>
+  </div>
+
+  <div class="metrics-grid" id="topMetrics"><div class="loading">Loading canteen data</div></div>
+
+  <div class="card" id="quickSellCard">
+    <div class="card-title">&#9889; QUICK SELL <span style="font-weight:400;color:var(--muted);text-transform:none;letter-spacing:0">(ring up a walk-up food sale — tap items to add to cart)</span></div>
+    <input class="search-input" id="quickSellSearch" placeholder="Search food menu..." oninput="renderQuickSellMenu()">
+    <div class="tab-row" id="quickSellTabs"></div>
+    <div class="quick-sell-grid" id="quickSellGrid"><div class="empty">Loading menu...</div></div>
+    <div class="quick-sell-panel" id="quickSellPanel"></div>
+  </div>
+
+  <div class="card">
+    <div class="card-title">&#128203; RECENTLY COMPLETED ORDERS <span style="font-weight:400;color:var(--muted);text-transform:none;letter-spacing:0">(last 15 Paid / Cancelled)</span></div>
+    <div class="scroll-table"><table><thead><tr><th>WHEN</th><th>WHERE</th><th>ITEMS</th><th>TOTAL</th><th>STATUS</th><th>BY</th></tr></thead><tbody id="recentOrdersBody"></tbody></table></div>
+  </div>
+
+  <div class="card">
+    <div class="card-title">&#127859; FOOD MENU <span style="font-weight:400;color:var(--muted);text-transform:none;letter-spacing:0">(edit items/prices directly in the 🍽️ Food Menu sheet, then Refresh)</span></div>
+    <div class="tab-row" id="foodMenuTabs"></div>
+    <div class="food-menu-list" id="foodMenuList"><div class="empty">Loading...</div></div>
+  </div>
+</div>
+
+<script>
+// Same deployment/exec URL as bar-dashboard.html and members-dashboard.html.
+const API_URL = 'https://script.google.com/macros/s/AKfycbyycYKCEtRchk0eToXIlMLgs3RmWIsKuUppD3UprPO8zLi9N5a9PIgn9uN4IKeip24E/exec';
+
+// The version this canteen-dashboard.html was built to work with. If
+// the backend reports anything else, your Code.gs edits are not live
+// yet — see renderVersionBanner() below.
+const EXPECTED_BACKEND_VERSION = '5.0';
+
+let foodMenu = [];
+let staffList = [];
+let quickSellCategory = 'All';
+let foodMenuCategory = 'All';
+let cart = {};
+
+// =====================
+// OFFLINE QUEUE (same pattern as bar-dashboard.html, separate key)
+// =====================
+const PENDING_KEY = 'whgh_canteen_pending_actions_v1';
+
+function genClientId(){
+  if(window.crypto && crypto.randomUUID) return crypto.randomUUID();
+  return 'cid-' + Date.now() + '-' + Math.random().toString(36).slice(2);
+}
+function getPendingQueue(){
+  try{ return JSON.parse(localStorage.getItem(PENDING_KEY) || '[]'); }catch(e){ return []; }
+}
+function savePendingQueue(queue){
+  try{ localStorage.setItem(PENDING_KEY, JSON.stringify(queue)); }catch(e){ /* storage unavailable */ }
+}
+function queueAction(kind, label, url, clientId){
+  const queue = getPendingQueue();
+  queue.push({ id: clientId, kind, label, url, queuedAt: new Date().toISOString() });
+  savePendingQueue(queue);
+  renderPendingBanner();
+}
+async function fetchOrQueue(url, kind, label, clientId){
+  try{
+    const res = await fetch(url + '&clientId=' + encodeURIComponent(clientId));
+    if(!res.ok) throw new Error('Server responded with status ' + res.status);
+    const data = await res.json();
+    if(!data.success) return { ok: false, error: data.error || 'Request failed', queued: false };
+    return { ok: true, data };
+  }catch(e){
+    if(e instanceof TypeError || /network|fetch/i.test(e.message||'')){
+      queueAction(kind, label, url, clientId);
+      return { ok: false, queued: true, error: 'No connection — queued, will send automatically once back online.' };
+    }
+    return { ok: false, queued: false, error: e.message || 'Request failed' };
+  }
+}
+async function flushPendingQueue(silent){
+  let queue = getPendingQueue();
+  if(queue.length === 0) return;
+  const stillPending = [];
+  let succeeded = 0;
+  for(const action of queue){
+    try{
+      const res = await fetch(action.url + '&clientId=' + encodeURIComponent(action.id));
+      if(!res.ok) throw new Error('status ' + res.status);
+      const data = await res.json();
+      if(data.success) { succeeded++; continue; }
+      action.error = data.error || 'Failed';
+      stillPending.push(action);
+    }catch(e){
+      stillPending.push(action);
+    }
+  }
+  savePendingQueue(stillPending);
+  renderPendingBanner();
+  if(succeeded > 0 && !silent) loadAll();
+}
+function renderPendingBanner(){
+  const queue = getPendingQueue();
+  const el = document.getElementById('pendingBanner');
+  if(queue.length === 0){ el.classList.remove('active'); el.innerHTML = ''; return; }
+  el.classList.add('active');
+  el.innerHTML = `<b>&#9203; ${queue.length} action${queue.length>1?'s':''} waiting to sync</b> — saved on this device, will send automatically once you're back online.` +
+    queue.map(a => `<div class="pending-item"><span>${a.label}</span><span style="color:var(--muted);font-family:'Space Mono',monospace">${new Date(a.queuedAt).toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit'})}${a.error?' — '+a.error:''}</span></div>`).join('') +
+    `<div class="pending-actions"><button class="btn" style="background:var(--teal);color:#0a0a0a" onclick="flushPendingQueue(false)">RETRY NOW</button></div>`;
+}
+function updateConnStatus(){
+  const el = document.getElementById('connStatus');
+  if(navigator.onLine){ el.textContent = '● online'; el.className = 'conn-status online'; }
+  else{ el.textContent = '● offline'; el.className = 'conn-status offline'; }
+}
+window.addEventListener('online', () => { updateConnStatus(); flushPendingQueue(false); });
+window.addEventListener('offline', updateConnStatus);
+
+function showApiError(msg){
+  const el = document.getElementById('errorBanner');
+  el.innerHTML = "<b>&#9888; Dashboard can't reach the sheet:</b> " + msg +
+    ' <br><br>Most common cause: Code.gs was edited but the deployment was not updated. In Apps Script, go to <b>Deploy &gt; Manage deployments</b>, click the pencil on the existing deployment, set Version to <b>New version</b>, and Deploy again.';
+  el.classList.add('active');
+}
+function clearApiError(){ document.getElementById('errorBanner').classList.remove('active'); }
+
+function renderVersionBanner(reportedVersion){
+  const el = document.getElementById('versionBanner');
+  if(reportedVersion === EXPECTED_BACKEND_VERSION){ el.classList.remove('active'); el.innerHTML = ''; return; }
+  el.classList.add('active');
+  el.innerHTML = `<b>&#9888; Backend is not up to date.</b> This dashboard expects backend <b>v${EXPECTED_BACKEND_VERSION}</b>, but the live deployment ` +
+    (reportedVersion ? `is reporting <b>v${reportedVersion}</b>` : `didn't report a version at all`) +
+    `. Fix it now:` +
+    `<ol>
+       <li>Open the sheet &gt; <b>Extensions &gt; Apps Script</b>. Confirm Code.gs contains <code>var BACKEND_VERSION = '${EXPECTED_BACKEND_VERSION}';</code> near the top.</li>
+       <li><b>Deploy &gt; Manage deployments</b> &gt; click the pencil (&#9998;) icon on the <u>existing</u> deployment.</li>
+       <li>Set Version to <b>New version</b>, then click <b>Deploy</b>.</li>
+       <li>Hard-refresh this page (Cmd/Ctrl+Shift+R).</li>
+     </ol>`;
+}
+
+// =====================
+// LOAD
+// =====================
+async function loadAll(){
+  updateConnStatus();
+  renderPendingBanner();
+  if(navigator.onLine) flushPendingQueue(true);
+  document.getElementById('lastRefresh').textContent = 'Refreshing...';
+  try{
+    const [menuRes, barRes] = await Promise.all([
+      fetch(API_URL + '?action=getFoodMenuPublic&t=' + Date.now()),
+      fetch(API_URL + '?action=getBarData&t=' + Date.now()) // reused only for staff list + backend version
+    ]);
+    const menuData = await menuRes.json();
+    const barData = await barRes.json();
+    if(!menuData.success) throw new Error(menuData.error || 'Could not load food menu');
+    if(!barData.success) throw new Error(barData.error || 'Could not load staff list');
+
+    foodMenu = menuData.menu || [];
+    staffList = (barData.staff || []).filter(s => s.initials && s.initials.trim());
+
+    document.getElementById('lastRefresh').textContent = 'Updated: ' + new Date().toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit'});
+    renderVersionBanner(barData.backendVersion || null);
+    clearApiError();
+
+    populateStaffSelect();
+    renderQuickSellTabs();
+    renderQuickSellMenu();
+    renderQuickSellPanel();
+    renderFoodMenuTabs();
+    renderFoodMenu();
+  }catch(e){
+    document.getElementById('lastRefresh').textContent = 'Offline — see message above';
+    showApiError(e.message || 'Could not load data.');
+    console.log('Load error:', e);
+  }
+  loadCanteenOrders();
+}
+
+function populateStaffSelect(){
+  const sel = document.getElementById('canteenStaffSelect');
+  const current = sel.value;
+  sel.innerHTML = '<option value="">Select staff...</option>' +
+    staffList.map(s => `<option value="${s.initials}">${s.initials}${s.name?' — '+s.name:''}</option>`).join('');
+  if(staffList.some(s=>s.initials===current)) sel.value = current;
+}
+
+// =====================
+// INCOMING CANTEEN ORDERS
+// =====================
+let canteenOrdersData = { active: [], recentFinal: [] };
+let seenActiveOrderIds = new Set();
+let canteenOrdersFirstLoad = true;
+
+function playOrderBeep(){
+  try{
+    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.connect(gain); gain.connect(ctx.destination);
+    osc.frequency.value = 660;
+    gain.gain.setValueAtTime(0.15, ctx.currentTime);
+    osc.start(); osc.stop(ctx.currentTime + 0.18);
+  }catch(e){ /* silent fail — visual flash still works */ }
+}
+
+async function loadCanteenOrders(){
+  try{
+    const res = await fetch(API_URL + '?action=getCanteenOrders&t=' + Date.now());
+    if(!res.ok) throw new Error('status ' + res.status);
+    const data = await res.json();
+    if(!data.success) throw new Error(data.error || 'Failed to load canteen orders');
+    canteenOrdersData = data;
+
+    const currentIds = new Set(data.active.map(o=>o.orderId));
+    let hasNewPlaced = false;
+    if(!canteenOrdersFirstLoad){
+      data.active.forEach(o => { if(o.status === 'Placed' && !seenActiveOrderIds.has(o.orderId)) hasNewPlaced = true; });
+    }
+    if(hasNewPlaced) playOrderBeep();
+    seenActiveOrderIds = currentIds;
+    canteenOrdersFirstLoad = false;
+
+    renderCanteenOrders();
+    renderMetrics();
+    renderRecentOrders();
+  }catch(e){
+    console.log('loadCanteenOrders error:', e);
+    const el = document.getElementById('canteenOrdersBody');
+    if(el) el.innerHTML = '<div class="empty">Could not load canteen orders — will retry automatically.</div>';
+  }
+}
+
+function statusClass(status){
+  if(status === 'Placed') return 'status-placed';
+  if(status === 'Preparing') return 'status-preparing';
+  if(status === 'Delivered - Awaiting Payment') return 'status-delivered';
+  return '';
+}
+function statusPillClass(status){
+  if(status === 'Placed') return 'placed';
+  if(status === 'Preparing') return 'preparing';
+  if(status === 'Delivered - Awaiting Payment') return 'delivered';
+  return '';
+}
+function orderAge(timestamp){
+  const t = new Date(timestamp);
+  if(isNaN(t.getTime())) return '';
+  const mins = Math.floor((Date.now() - t.getTime()) / 60000);
+  if(mins < 1) return 'just now';
+  if(mins === 1) return '1 min ago';
+  return mins + ' min ago';
+}
+function locationLabel(o){
+  return o.locationType + (o.locationDetail ? ` <small>${o.locationDetail}</small>` : '');
+}
+
+function renderCanteenOrders(){
+  const el = document.getElementById('canteenOrdersBody');
+  const active = (canteenOrdersData.active || []).slice().sort((a,b) => {
+    const order = {'Placed':0, 'Preparing':1, 'Delivered - Awaiting Payment':2};
+    return (order[a.status]??3) - (order[b.status]??3) || new Date(a.timestamp) - new Date(b.timestamp);
+  });
+  if(active.length === 0){ el.innerHTML = '<div class="empty">No active canteen orders right now.</div>'; return; }
+
+  el.innerHTML = active.map(o => {
+    const itemsHtml = (o.items||[]).map(i => `${i.qty} &times; ${i.item}`).join(', ');
+    const isNew = o.status === 'Placed' && !canteenOrdersFirstLoad;
+    let actionsHtml = '';
+    if(o.status === 'Placed'){
+      actionsHtml = `<button class="oa-primary" onclick="canteenOrderAction('${o.orderId}','Preparing')">START PREPARING</button>`;
+    }else if(o.status === 'Preparing'){
+      actionsHtml = `<button class="oa-primary" onclick="canteenOrderAction('${o.orderId}','Delivered - Awaiting Payment')">MARK DELIVERED / READY</button>`;
+    }else if(o.status === 'Delivered - Awaiting Payment'){
+      if(o.payment === 'MoMo'){
+        actionsHtml = `<input class="order-momo-input" id="momoRef_${o.orderId}" placeholder="MoMo reference / note (optional)">
+          <button class="oa-primary" onclick="canteenOrderAction('${o.orderId}','Paid')">&#10003; CONFIRM MOMO RECEIVED</button>`;
+      }else{
+        actionsHtml = `<button class="oa-primary" onclick="canteenOrderAction('${o.orderId}','Paid')">&#10003; CONFIRM CASH RECEIVED</button>`;
+      }
+    }
+    actionsHtml += `<button class="oa-cancel" onclick="canteenOrderAction('${o.orderId}','Cancelled')">CANCEL</button>`;
+
+    return `<div class="order-card ${statusClass(o.status)}${isNew && o.status==='Placed' ? ' is-new':''}">
+      <div class="order-card-top">
+        <div><span class="order-card-loc">${locationLabel(o)}</span> &nbsp; <span class="order-status-pill ${statusPillClass(o.status)}">${o.status}</span></div>
+        <div class="order-card-age">${orderAge(o.timestamp)}</div>
+      </div>
+      <div class="order-items-list">${itemsHtml}${o.phone ? ' &middot; ' + o.phone : ''}</div>
+      <div class="order-card-footer">
+        <span class="order-total">GHS ${o.total.toFixed(2)}</span>
+        <span class="order-pay-badge">${o.payment}</span>
+      </div>
+      <div class="order-actions">${actionsHtml}</div>
+    </div>`;
+  }).join('');
+}
+
+async function canteenOrderAction(orderId, newStatus){
+  const staffSel = document.getElementById('canteenStaffSelect');
+  const staffInitials = staffSel ? staffSel.value : '';
+  if(!staffInitials){ alert('Select which staff member is acting first (top of the Incoming Canteen Orders card).'); return; }
+  if(newStatus === 'Cancelled' && !confirm('Cancel this order? This cannot be undone.')) return;
+
+  let momoReference = '';
+  const momoInput = document.getElementById('momoRef_' + orderId);
+  if(momoInput) momoReference = momoInput.value.trim();
+
+  let url = API_URL + '?action=updateCanteenOrderStatus&orderId=' + encodeURIComponent(orderId) + '&newStatus=' + encodeURIComponent(newStatus) + '&staffInitials=' + encodeURIComponent(staffInitials);
+  if(momoReference) url += '&momoReference=' + encodeURIComponent(momoReference);
+  url += '&t=' + Date.now();
+
+  const clientId = genClientId();
+  const label = `Canteen order ${orderId} -> ${newStatus}`;
+  const result = await fetchOrQueue(url, 'canteenOrder', label, clientId);
+
+  if(result.ok || result.queued){
+    loadCanteenOrders();
+  }else{
+    alert('Could not update order: ' + result.error);
+  }
+}
+
+function renderMetrics(){
+  const active = canteenOrdersData.active || [];
+  const recentFinal = canteenOrdersData.recentFinal || [];
+  const paidRecent = recentFinal.filter(o => o.status === 'Paid');
+  const revenueRecent = paidRecent.reduce((s,o)=>s+(o.total||0),0);
+  document.getElementById('topMetrics').innerHTML = `
+    <div class="metric-card gold">
+      <div class="metric-label">ACTIVE ORDERS</div>
+      <div class="metric-value">${active.length}</div>
+      <div class="metric-sub">placed, preparing, or awaiting payment</div>
+    </div>
+    <div class="metric-card teal">
+      <div class="metric-label">RECENTLY COMPLETED</div>
+      <div class="metric-value">${recentFinal.length}</div>
+      <div class="metric-sub">last 15 Paid / Cancelled</div>
+    </div>
+    <div class="metric-card green">
+      <div class="metric-label">RECENT PAID TOTAL</div>
+      <div class="metric-value">&#8373;${revenueRecent.toFixed(2)}</div>
+      <div class="metric-sub">sum of the recent Paid orders above</div>
+    </div>`;
+}
+
+function renderRecentOrders(){
+  const recent = canteenOrdersData.recentFinal || [];
+  const el = document.getElementById('recentOrdersBody');
+  if(recent.length===0){ el.innerHTML = '<tr><td colspan="6" class="empty">No completed orders yet</td></tr>'; return; }
+  el.innerHTML = recent.map(o=>{
+    const t = new Date(o.timestamp);
+    const timeStr = isNaN(t.getTime()) ? '—' : t.toLocaleString('en-GB',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'});
+    const itemsStr = (o.items||[]).map(i=>`${i.qty}x ${i.item}`).join(', ');
+    const statusColor = o.status === 'Paid' ? 'var(--green)' : 'var(--red)';
+    return `<tr><td style="font-family:'Space Mono',monospace;font-size:11px">${timeStr}</td><td>${o.locationType}${o.locationDetail?' — '+o.locationDetail:''}</td><td style="font-size:11px;color:var(--text-dim)">${itemsStr}</td><td style="color:var(--gold);font-weight:700">&#8373;${o.total.toFixed(2)}</td><td style="color:${statusColor};font-weight:700">${o.status}</td><td>${o.handledBy||'—'}</td></tr>`;
+  }).join('');
+}
+
+// =====================
+// FOOD MENU DISPLAY (read-only)
+// =====================
+function renderFoodMenuTabs(){
+  const counts = {};
+  foodMenu.forEach(m => { const c = m.category || 'Other'; counts[c] = (counts[c]||0)+1; });
+  const cats = Object.keys(counts).sort((a,b)=>counts[b]-counts[a]);
+  if(!cats.includes(foodMenuCategory) && foodMenuCategory !== 'All') foodMenuCategory = 'All';
+  const tabs = [{key:'All', label:'All', count: foodMenu.length}, ...cats.map(c=>({key:c,label:c,count:counts[c]}))];
+  const row = document.getElementById('foodMenuTabs');
+  row.innerHTML = '';
+  tabs.forEach(t => {
+    const btn = document.createElement('button');
+    btn.className = 'tab-pill' + (foodMenuCategory===t.key?' active':'');
+    btn.innerHTML = `${t.label}<span class="tab-count">${t.count}</span>`;
+    btn.addEventListener('click', () => { foodMenuCategory = t.key; renderFoodMenuTabs(); renderFoodMenu(); });
+    row.appendChild(btn);
+  });
+}
+function renderFoodMenu(){
+  let items = foodMenu;
+  if(foodMenuCategory !== 'All') items = items.filter(m => (m.category||'Other') === foodMenuCategory);
+  const el = document.getElementById('foodMenuList');
+  if(items.length===0){ el.innerHTML = '<div class="empty">No food items yet — add rows to the 🍽️ Food Menu sheet, then Refresh.</div>'; return; }
+  el.innerHTML = items.map(m=>`
+    <div class="rank-row">
+      <div class="rank-info"><div class="rank-name">${m.item}</div><div class="rank-sub">${m.category||'—'}</div></div>
+      <div class="rank-value">&#8373;${m.price.toFixed(2)}</div>
+    </div>`).join('');
+}
+
+// =====================
+// QUICK SELL (walk-up food sales)
+// =====================
+function renderQuickSellTabs(){
+  const counts = {};
+  foodMenu.forEach(m => { const c = m.category || 'Other'; counts[c] = (counts[c]||0)+1; });
+  const cats = Object.keys(counts).sort((a,b)=>counts[b]-counts[a]);
+  if(!cats.includes(quickSellCategory) && quickSellCategory !== 'All') quickSellCategory = 'All';
+  const tabs = [{key:'All', label:'All', count: foodMenu.length}, ...cats.map(c=>({key:c,label:c,count:counts[c]}))];
+  const tabRow = document.getElementById('quickSellTabs');
+  tabRow.innerHTML = '';
+  tabs.forEach(t => {
+    const btn = document.createElement('button');
+    btn.className = 'tab-pill' + (quickSellCategory===t.key?' active':'');
+    btn.innerHTML = `${t.label}<span class="tab-count">${t.count}</span>`;
+    btn.addEventListener('click', () => { quickSellCategory = t.key; renderQuickSellTabs(); renderQuickSellMenu(); });
+    tabRow.appendChild(btn);
+  });
+}
+
+function renderQuickSellMenu(){
+  const q = (document.getElementById('quickSellSearch').value||'').toLowerCase();
+  let items = foodMenu;
+  if(quickSellCategory !== 'All') items = items.filter(m => (m.category||'Other') === quickSellCategory);
+  if(q) items = items.filter(m => m.item.toLowerCase().includes(q));
+  const grid = document.getElementById('quickSellGrid');
+  grid.innerHTML = '';
+  if(items.length===0){ grid.innerHTML = '<div class="empty">No menu items match</div>'; return; }
+  items.forEach(m => {
+    const btn = document.createElement('button');
+    const qtyInCart = cart[m.item] || 0;
+    btn.type = 'button';
+    btn.className = 'quick-sell-item' + (qtyInCart>0 ? ' in-cart' : '');
+    btn.innerHTML = `
+      ${qtyInCart>0 ? `<span class="qs-cart-qty">${qtyInCart}</span>` : ''}
+      <span class="qs-name"></span>
+      <span class="qs-price">&#8373;${m.price.toFixed(2)}</span>
+      <span class="qs-cat"></span>`;
+    btn.querySelector('.qs-name').textContent = m.item;
+    btn.querySelector('.qs-cat').textContent = m.category || '';
+    btn.addEventListener('click', () => addToCart(m.item));
+    grid.appendChild(btn);
+  });
+}
+
+function addToCart(itemName){
+  cart[itemName] = (cart[itemName]||0) + 1;
+  renderQuickSellMenu();
+  renderQuickSellPanel();
+}
+function setCartQty(itemName, qty){
+  qty = Math.max(0, Math.floor(qty) || 0);
+  if(qty <= 0){ delete cart[itemName]; } else { cart[itemName] = qty; }
+  renderQuickSellMenu();
+  renderQuickSellPanel();
+}
+function cartSubtotal(){
+  let total = 0;
+  Object.keys(cart).forEach(name => {
+    const m = foodMenu.find(mm => mm.item === name);
+    if(m) total += m.price * cart[name];
+  });
+  return total;
+}
+
+function renderQuickSellPanel(){
+  const panel = document.getElementById('quickSellPanel');
+  const itemNames = Object.keys(cart).filter(k => cart[k] > 0);
+
+  if(itemNames.length === 0){ panel.classList.remove('show'); panel.innerHTML = ''; return; }
+  panel.classList.add('show');
+
+  const prevStaff = document.getElementById('qsStaff') ? document.getElementById('qsStaff').value : '';
+  const prevCustomer = document.getElementById('qsCustomer') ? document.getElementById('qsCustomer').value : '';
+  const prevNewName = document.getElementById('qsNewName') ? document.getElementById('qsNewName').value : '';
+  const prevPayment = document.getElementById('qsPayment') ? document.getElementById('qsPayment').value : '';
+  const subtotal = cartSubtotal();
+
+  const cartRowsHtml = itemNames.map(name => {
+    const m = foodMenu.find(mm => mm.item === name);
+    const price = m ? m.price : 0;
+    const qty = cart[name];
+    return `
+    <div class="cart-row" data-cart-item="${encodeURIComponent(name)}">
+      <div class="cart-name"><span class="cart-item-name"></span><span class="cart-unit-price">&#8373;${price.toFixed(2)} each</span></div>
+      <div class="cart-qty-stepper">
+        <button type="button" class="cart-qty-dec">&minus;</button>
+        <span>${qty}</span>
+        <button type="button" class="cart-qty-inc">+</button>
+      </div>
+      <div class="cart-line-total">&#8373;${(price*qty).toFixed(2)}</div>
+      <button type="button" class="cart-remove" title="Remove">&times;</button>
+    </div>`;
+  }).join('');
+
+  panel.innerHTML = `
+    <div class="qs-title"><span>&#128722; CART (${itemNames.length} item${itemNames.length>1?'s':''})</span><button type="button" class="cart-remove" id="qsClearCart" title="Clear cart" style="font-size:12px;color:var(--muted)">CLEAR</button></div>
+    <div class="cart-list" id="cartList"></div>
+    <div class="cart-subtotal-row"><span>Subtotal</span><span class="cart-subtotal-value">&#8373;${subtotal.toFixed(2)}</span></div>
+    ${staffList.length===0 ? '<div class="qs-warning">&#9888; No staff with initials found in the 🧑\u200d💼 Staff sheet — fill in Slot/Initials there, then hit Refresh.</div>' : ''}
+    <div class="qs-field-grid" style="margin-top:10px">
+      <div>
+        <div class="qs-label">Served by (required)</div>
+        <select class="select-input" id="qsStaff" style="margin:0"></select>
+      </div>
+      <div>
+        <div class="qs-label">Payment method (optional)</div>
+        <select class="select-input" id="qsPayment">
+          <option value="">Select payment...</option>
+          <option>Cash</option><option>Mobile Money</option><option>Card</option><option>Room Charge</option>
+        </select>
+      </div>
+    </div>
+    <div class="qs-label" style="margin-top:8px">Customer phone or ID (optional — leave blank for walk-in)</div>
+    <input class="search-input" id="qsCustomer" placeholder="e.g. 0241234567 or THWGH1" style="margin:0 0 10px">
+    <div class="qs-label">New customer name (only needed if the ID/phone above is new)</div>
+    <input class="search-input" id="qsNewName" placeholder="e.g. Ama Mensah" style="margin:0 0 10px">
+    <button class="btn" id="qsConfirmBtn">&#10003; CONFIRM SALE — &#8373;${subtotal.toFixed(2)}</button>
+    <div id="qsResult" style="margin-top:8px;font-size:12px"></div>`;
+
+  document.getElementById('cartList').innerHTML = cartRowsHtml;
+  document.getElementById('cartList').querySelectorAll('.cart-row').forEach(row => {
+    const name = decodeURIComponent(row.dataset.cartItem);
+    row.querySelector('.cart-item-name').textContent = name;
+    row.querySelector('.cart-qty-inc').addEventListener('click', () => setCartQty(name, (cart[name]||0)+1));
+    row.querySelector('.cart-qty-dec').addEventListener('click', () => setCartQty(name, (cart[name]||0)-1));
+    row.querySelector('.cart-remove').addEventListener('click', () => setCartQty(name, 0));
+  });
+
+  const staffSel = document.getElementById('qsStaff');
+  staffSel.innerHTML = '<option value="">Select staff...</option>' +
+    staffList.map(s => `<option value="${s.initials}">${s.initials}${s.name?' — '+s.name:''}</option>`).join('');
+  if(staffList.some(s=>s.initials===prevStaff)) staffSel.value = prevStaff;
+
+  document.getElementById('qsCustomer').value = prevCustomer;
+  document.getElementById('qsNewName').value = prevNewName;
+  const paySel = document.getElementById('qsPayment');
+  if(prevPayment) paySel.value = prevPayment;
+
+  document.getElementById('qsConfirmBtn').addEventListener('click', submitQuickSellCart);
+  document.getElementById('qsClearCart').addEventListener('click', clearCart);
+}
+
+function clearCart(){
+  cart = {};
+  renderQuickSellMenu();
+  renderQuickSellPanel();
+}
+
+async function submitQuickSellCart(){
+  const staffInitials = document.getElementById('qsStaff').value;
+  const custQuery = document.getElementById('qsCustomer').value.trim();
+  const newCustomerName = document.getElementById('qsNewName').value.trim();
+  const payment = document.getElementById('qsPayment').value;
+  const resultEl = document.getElementById('qsResult');
+  const confirmBtn = document.getElementById('qsConfirmBtn');
+
+  if(staffList.length === 0){
+    resultEl.innerHTML = '<span style="color:var(--red)">No staff are set up yet — add initials in the 🧑\u200d💼 Staff sheet, then Refresh before selling.</span>';
+    return;
+  }
+  if(!staffInitials){ resultEl.innerHTML = '<span style="color:var(--red)">Pick who is serving.</span>'; return; }
+
+  const itemNames = Object.keys(cart).filter(k => cart[k] > 0);
+  if(itemNames.length === 0){ resultEl.innerHTML = '<span style="color:var(--red)">Cart is empty.</span>'; return; }
+
+  confirmBtn.disabled = true;
+  confirmBtn.textContent = 'Processing sale...';
+  resultEl.innerHTML = '';
+
+  const lineResults = [];
+  for(const itemName of itemNames){
+    const qty = cart[itemName];
+    let url = API_URL + '?action=quickSell&item=' + encodeURIComponent(itemName) + '&qty=' + encodeURIComponent(qty) + '&staffInitials=' + encodeURIComponent(staffInitials) + '&payment=' + encodeURIComponent(payment);
+    if(custQuery) url += '&custQuery=' + encodeURIComponent(custQuery);
+    if(newCustomerName) url += '&newCustomerName=' + encodeURIComponent(newCustomerName);
+    url += '&t=' + Date.now();
+    const clientId = genClientId();
+    const label = `Sale: ${qty} x ${itemName} (${staffInitials})`;
+    const result = await fetchOrQueue(url, 'quickSell', label, clientId);
+    lineResults.push({ itemName, qty, result });
+  }
+
+  const succeeded = lineResults.filter(r => r.result.ok);
+  const queued = lineResults.filter(r => r.result.queued);
+  const failed = lineResults.filter(r => !r.result.ok && !r.result.queued);
+
+  if(failed.length === lineResults.length){
+    resultEl.innerHTML = '<span style="color:var(--red)">' + (failed[0].result.error || 'Sale failed') + '</span>';
+    confirmBtn.disabled = false;
+    confirmBtn.textContent = '\u2713 CONFIRM SALE — \u20b5' + cartSubtotal().toFixed(2);
+    return;
+  }
+
+  let subtotalRung = succeeded.reduce((s,r)=>s + (r.result.data ? r.result.data.lineTotal : 0), 0);
+  let msg = '';
+  if(succeeded.length){
+    msg += `<span class="flash">&#10003; ${succeeded.length} item${succeeded.length>1?'s':''} rung up — &#8373;${subtotalRung.toFixed(2)} · served by ${staffInitials}</span><br>`;
+  }
+  if(queued.length){
+    msg += `<span style="color:var(--teal)">&#9203; ${queued.length} item${queued.length>1?'s':''} queued (no connection) — will send automatically once back online.</span><br>`;
+  }
+  if(failed.length){
+    msg += `<span style="color:var(--red)">${failed.length} item${failed.length>1?'s':''} failed: ${failed.map(f=>f.itemName+' ('+f.result.error+')').join('; ')}</span>`;
+  }
+  resultEl.innerHTML = msg;
+
+  if(failed.length === 0){
+    setTimeout(()=>{ clearCart(); loadAll(); }, queued.length ? 3200 : 1800);
+  }else{
+    lineResults.forEach(r => { if(r.result.ok || r.result.queued) delete cart[r.itemName]; });
+    confirmBtn.disabled = false;
+    confirmBtn.textContent = '\u2713 CONFIRM SALE — \u20b5' + cartSubtotal().toFixed(2);
+    renderQuickSellMenu();
+    renderQuickSellPanel();
+  }
+}
+
+loadAll();
+setInterval(loadAll, 30000);
+setInterval(loadCanteenOrders, 10000); // faster refresh — customers are waiting
+</script>
+</body>
+</html>
