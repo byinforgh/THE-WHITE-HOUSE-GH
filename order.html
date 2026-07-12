@@ -1,19 +1,32 @@
 <!DOCTYPE html>
 <html lang="en">
 <!--
-  THE WHITE HOUSE GH — TABLE ORDER PAGE (v1.0, paired with Code.gs v4.9)
+  THE WHITE HOUSE GH — TABLE ORDER PAGE (v2.0, paired with Code.gs v5.1)
+
+  v2.0: now shares the same location picker as canteen-order.html —
+  Table (1-50), Pickup, Delivery, Room Number, Bar Area, VIP Area,
+  Pool, Stage Area — instead of only a table number. Name and
+  phone/membership number are both required on every order now, so
+  staff always know whose order it is, at any location, and so a
+  first-time customer gets registered as a member correctly when the
+  order is marked Paid.
+
+  BACKWARD COMPATIBILITY: your existing printed table QR codes
+  (encoding ?table=12 etc.) keep working — this page detects that old
+  URL format and auto-selects Table + that number, same as before.
+  New QR codes / links can use ?location=Bar+Area or similar instead.
 
   This is what a customer sees after scanning the QR code at their
-  table. It reads ?table=N from the URL, shows the drinks + food
-  menu, lets them build a cart, and submits the order. Nothing here
-  touches stock or revenue — that only happens when staff mark the
-  order Paid on the bar dashboard.
+  table (or any other order point). It shows the FULL bar + food
+  menu (drinks and food together) — for food-only ordering with a
+  simpler location picker, see canteen-order.html instead. Nothing
+  here touches stock or revenue — that only happens when staff mark
+  the order Paid on bar-dashboard.html.
 
   OFFLINE SAFETY: if the connection drops right when they submit, the
   order is saved on THEIR PHONE (localStorage) and retried
   automatically every few seconds and the moment the connection comes
-  back — same pattern as the bar dashboard's offline queue. As long as
-  they don't close the browser tab, the order will get through.
+  back — same pattern as everything else in this system.
 
   SETUP: fill in API_URL below with the SAME /exec URL as your bar
   dashboard (same Apps Script deployment). Fill in nothing else —
@@ -30,13 +43,23 @@
 body{background:var(--black);color:var(--text);font-family:'Syne',sans-serif;min-height:100vh;padding-bottom:110px;}
 .header{background:var(--surface);border-bottom:1px solid var(--border);padding:16px 18px;text-align:center;position:sticky;top:0;z-index:50;}
 .header .logo{font-size:17px;font-weight:800;letter-spacing:1px;color:var(--gold);}
-.header .table-pill{display:inline-block;margin-top:6px;background:var(--border);color:var(--teal);font-family:'Space Mono',monospace;font-size:12px;padding:4px 12px;border-radius:20px;}
+.header .loc-pill{display:inline-block;margin-top:6px;background:var(--border);color:var(--teal);font-family:'Space Mono',monospace;font-size:12px;padding:4px 12px;border-radius:20px;}
 .main{padding:14px 14px 0;max-width:640px;margin:0 auto;}
+
+.loc-box{margin-bottom:14px;}
+.field-label{font-size:11px;color:var(--text-dim);font-weight:700;letter-spacing:0.5px;margin:10px 0 4px;text-transform:uppercase;}
+.loc-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:6px;}
+.loc-option{background:var(--card);border:2px solid var(--border);border-radius:10px;padding:12px 10px;text-align:center;cursor:pointer;font-size:13px;font-weight:700;}
+.loc-option.selected{border-color:var(--gold);background:#1e1706;color:var(--gold);}
+.search-input{background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:12px 14px;color:var(--text);font-size:14px;width:100%;margin-bottom:12px;outline:none;font-family:'Syne',sans-serif;}
+.search-input:focus{border-color:var(--gold);}
+.btn{background:var(--gold);color:var(--black);border:none;padding:14px;border-radius:8px;font-size:14px;font-weight:800;width:100%;cursor:pointer;font-family:'Syne',sans-serif;margin-top:8px;}
+.btn:disabled{opacity:0.5;}
+.btn.secondary{background:var(--border);color:var(--text);}
+
 .tab-row{display:flex;gap:6px;overflow-x:auto;padding-bottom:4px;margin-bottom:12px;}
 .tab-pill{flex-shrink:0;background:var(--surface);border:1px solid var(--border);color:var(--text-dim);padding:7px 14px;border-radius:20px;font-size:11px;font-weight:700;cursor:pointer;font-family:'Syne',sans-serif;}
 .tab-pill.active{background:var(--gold);color:var(--black);border-color:var(--gold);}
-.search-input{background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:12px 14px;color:var(--text);font-size:14px;width:100%;margin-bottom:12px;outline:none;font-family:'Syne',sans-serif;}
-.search-input:focus{border-color:var(--gold);}
 .menu-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;}
 .menu-item{position:relative;background:var(--card);border:1px solid var(--border);border-radius:10px;padding:14px;cursor:pointer;text-align:left;}
 .menu-item.in-cart{border-color:var(--gold);background:#1e1706;}
@@ -72,10 +95,6 @@ body{background:var(--black);color:var(--text);font-family:'Syne',sans-serif;min
 .pay-option.selected{border-color:var(--gold);background:#1e1706;}
 .pay-option .po-icon{font-size:22px;}
 .pay-option .po-label{font-size:13px;font-weight:800;margin-top:6px;}
-.field-label{font-size:11px;color:var(--text-dim);font-weight:700;letter-spacing:0.5px;margin:10px 0 4px;text-transform:uppercase;}
-.btn{background:var(--gold);color:var(--black);border:none;padding:14px;border-radius:8px;font-size:14px;font-weight:800;width:100%;cursor:pointer;font-family:'Syne',sans-serif;margin-top:8px;}
-.btn:disabled{opacity:0.5;}
-.btn.secondary{background:var(--border);color:var(--text);}
 .error-msg{color:var(--red);font-size:12px;margin-top:8px;}
 .momo-box{background:var(--surface);border:1px solid var(--teal);border-radius:8px;padding:14px;font-size:13px;line-height:1.7;margin-top:10px;}
 .momo-box b{color:var(--teal);}
@@ -90,19 +109,23 @@ body{background:var(--black);color:var(--text);font-family:'Syne',sans-serif;min
 
 <div class="header">
   <div class="logo">THE WHITE HOUSE GH</div>
-  <div class="table-pill" id="tablePill">Table —</div>
+  <div class="loc-pill" id="locPill">Table Order</div>
 </div>
 
 <div class="main">
-  <div id="noTableBox" style="display:none;margin-bottom:14px">
-    <div class="field-label">Enter your table number</div>
-    <input class="search-input" id="manualTableInput" placeholder="e.g. 12" inputmode="numeric">
-    <button class="btn" onclick="confirmManualTable()">CONTINUE</button>
+  <div id="locationBox" class="loc-box">
+    <div class="field-label">Where is this order for?</div>
+    <div class="loc-grid" id="locationGrid"><div class="empty" style="grid-column:1/-1">Loading options…</div></div>
+    <div id="locationDetailBox" style="display:none">
+      <div class="field-label" id="locationDetailLabel">Details</div>
+      <select class="search-input" id="locationDetailSelect" style="display:none"></select>
+      <input class="search-input" id="locationDetailInput" placeholder="">
+    </div>
   </div>
 
   <div id="menuArea">
     <div class="tab-row" id="menuTabs"></div>
-    <input class="search-input" id="menuSearch" placeholder="Search menu..." oninput="renderMenu()">
+    <input class="search-input" id="menuSearch" placeholder="Search drinks + food menu..." oninput="renderMenu()">
     <div class="menu-grid" id="menuGrid"><div class="loading">Loading menu…</div></div>
   </div>
 </div>
@@ -128,8 +151,12 @@ body{background:var(--black);color:var(--text);font-family:'Syne',sans-serif;min
       </div>
     </div>
 
-    <div class="field-label">Phone number (optional — for loyalty points)</div>
-    <input class="search-input" id="custPhone" placeholder="e.g. 0241234567">
+    <div class="field-label">Your name (required)</div>
+    <input class="search-input" id="custName" placeholder="e.g. Ama Mensah">
+
+    <div class="field-label">Phone number or membership number (required)</div>
+    <input class="search-input" id="custPhone" placeholder="e.g. 0241234567 or THWGH12">
+    <div style="font-size:11px;color:var(--text-dim);margin:-6px 0 12px;line-height:1.5">Already a member? Enter your membership number. First time? Just enter your phone number — we'll set you up automatically.</div>
 
     <div id="submitError" class="error-msg"></div>
     <button class="btn" id="submitBtn" onclick="submitOrder()" disabled>SELECT A PAYMENT METHOD</button>
@@ -144,10 +171,12 @@ body{background:var(--black);color:var(--text);font-family:'Syne',sans-serif;min
 </div>
 
 <script>
-const API_URL = 'https://script.google.com/macros/s/AKfycbyycYKCEtRchk0eToXIlMLgs3RmWIsKuUppD3UprPO8zLi9N5a9PIgn9uN4IKeip24E/exec'; // same deployment as the bar dashboard
+const API_URL = 'https://script.google.com/macros/s/AKfycbyycYKCEtRchk0eToXIlMLgs3RmWIsKuUppD3UprPO8zLi9N5a9PIgn9uN4IKeip24E/exec'; // same deployment as the other dashboards
 
-let tableNumber = null;
+let locationType = null;
+let locationDetail = '';
 let menu = [];
+let locationTypes = [];
 let momoNumber = '';
 let momoName = '';
 let cart = {};
@@ -163,27 +192,29 @@ function genClientId(){
 
 function init(){
   const params = new URLSearchParams(window.location.search);
-  const t = params.get('table');
-  if(t && t.trim()){
-    tableNumber = t.trim();
-    document.getElementById('tablePill').textContent = 'Table ' + tableNumber;
-  }else{
-    document.getElementById('noTableBox').style.display = 'block';
-    document.getElementById('tablePill').textContent = 'No table set';
-  }
-  loadMenu();
+  const loc = params.get('location');
+  const detail = params.get('detail');
+  const legacyTable = params.get('table'); // backward compatibility with existing printed QR codes
+  loadFoodMenu(function(){
+    if(loc && locationTypes.indexOf(loc) !== -1){
+      selectLocation(loc, true);
+      if(detail) {
+        locationDetail = detail;
+        const detailInput = document.getElementById('locationDetailInput');
+        const detailSelect = document.getElementById('locationDetailSelect');
+        if(loc === 'Table') detailSelect.value = detail; else detailInput.value = detail;
+      }
+    }else if(legacyTable){
+      selectLocation('Table', true);
+      locationDetail = legacyTable;
+      const detailSelect = document.getElementById('locationDetailSelect');
+      if(detailSelect) detailSelect.value = legacyTable;
+    }
+  });
   resumePendingOrder();
 }
 
-function confirmManualTable(){
-  const v = document.getElementById('manualTableInput').value.trim();
-  if(!v){ return; }
-  tableNumber = v;
-  document.getElementById('tablePill').textContent = 'Table ' + tableNumber;
-  document.getElementById('noTableBox').style.display = 'none';
-}
-
-async function loadMenu(){
+async function loadFoodMenu(afterLoad){
   try{
     const res = await fetch(API_URL + '?action=getMenuPublic&t=' + Date.now());
     const data = await res.json();
@@ -191,10 +222,69 @@ async function loadMenu(){
     menu = data.menu || [];
     momoNumber = data.momoNumber || '';
     momoName = data.momoName || '';
+    locationTypes = data.locationTypes || ['Table','Pickup','Delivery','Room Number','Bar Area','VIP Area','Pool','Stage Area'];
+    renderLocationOptions();
     renderTabs();
     renderMenu();
+    if(afterLoad) afterLoad();
   }catch(e){
     document.getElementById('menuGrid').innerHTML = '<div class="empty" style="grid-column:1/-1">Could not load the menu — check your connection and reload the page.</div>';
+    document.getElementById('locationGrid').innerHTML = '<div class="empty" style="grid-column:1/-1">Could not load options — check your connection and reload.</div>';
+  }
+}
+
+function renderLocationOptions(){
+  const grid = document.getElementById('locationGrid');
+  grid.innerHTML = '';
+  locationTypes.forEach(loc => {
+    const el = document.createElement('div');
+    el.className = 'loc-option' + (locationType===loc ? ' selected' : '');
+    el.textContent = loc;
+    el.onclick = () => selectLocation(loc, false);
+    grid.appendChild(el);
+  });
+}
+
+function selectLocation(loc, skipDetailReset){
+  locationType = loc;
+  if(!skipDetailReset) locationDetail = '';
+  renderLocationOptions();
+  document.getElementById('locPill').textContent = loc;
+
+  const detailBox = document.getElementById('locationDetailBox');
+  const detailLabel = document.getElementById('locationDetailLabel');
+  const detailInput = document.getElementById('locationDetailInput');
+  const detailSelect = document.getElementById('locationDetailSelect');
+
+  if(loc === 'Table'){
+    detailBox.style.display = 'block';
+    detailLabel.textContent = 'Table Number';
+    detailInput.style.display = 'none';
+    detailSelect.style.display = 'block';
+    if(detailSelect.options.length === 0){
+      detailSelect.innerHTML = '<option value="">Select a table...</option>' +
+        Array.from({length:50}, (_,i)=>i+1).map(n=>`<option value="${n}">Table ${n}</option>`).join('');
+    }
+    detailSelect.value = locationDetail || '';
+    detailSelect.onchange = () => { locationDetail = detailSelect.value; };
+  }else if(loc === 'Room Number'){
+    detailBox.style.display = 'block';
+    detailLabel.textContent = 'Room Number';
+    detailSelect.style.display = 'none';
+    detailInput.style.display = 'block';
+    detailInput.placeholder = 'e.g. 204';
+    detailInput.value = locationDetail;
+    detailInput.oninput = () => { locationDetail = detailInput.value.trim(); };
+  }else if(loc === 'Delivery'){
+    detailBox.style.display = 'block';
+    detailLabel.textContent = 'Delivery Address / Description';
+    detailSelect.style.display = 'none';
+    detailInput.style.display = 'block';
+    detailInput.placeholder = 'e.g. 12 Ridge Avenue, near the junction';
+    detailInput.value = locationDetail;
+    detailInput.oninput = () => { locationDetail = detailInput.value.trim(); };
+  }else{
+    detailBox.style.display = 'none';
   }
 }
 
@@ -272,7 +362,7 @@ function selectPayment(method){
   document.getElementById('payMomo').classList.toggle('selected', method==='MoMo');
   const btn = document.getElementById('submitBtn');
   btn.disabled = false;
-  btn.textContent = method === 'MoMo' ? 'SUBMIT ORDER — PAY BY MOMO' : 'SUBMIT ORDER — PAY CASH ON DELIVERY';
+  btn.textContent = method === 'MoMo' ? 'SUBMIT ORDER — PAY BY MOMO' : 'SUBMIT ORDER — PAY CASH ON DELIVERY/PICKUP';
 }
 
 function renderCartModal(){
@@ -303,13 +393,24 @@ function renderCartModal(){
 }
 
 async function submitOrder(){
-  if(!tableNumber){ document.getElementById('submitError').textContent = 'No table number set — scan the QR code again or enter it manually.'; return; }
+  if(!locationType){ document.getElementById('submitError').textContent = 'Please choose where this order is for, above the menu.'; closeCartModal(); window.scrollTo({top:0, behavior:'smooth'}); return; }
+  if(locationType === 'Table' && !locationDetail){
+    document.getElementById('submitError').textContent = 'Please choose a table number above the menu.';
+    closeCartModal(); window.scrollTo({top:0, behavior:'smooth'}); return;
+  }
+  if((locationType === 'Delivery' || locationType === 'Room Number') && !locationDetail){
+    document.getElementById('submitError').textContent = locationType === 'Delivery' ? 'Please add a delivery address above the menu.' : 'Please add the room number above the menu.';
+    closeCartModal(); window.scrollTo({top:0, behavior:'smooth'}); return;
+  }
+  const custName = document.getElementById('custName').value.trim();
+  const phone = document.getElementById('custPhone').value.trim();
+  if(!custName){ document.getElementById('submitError').textContent = 'Please enter your name.'; return; }
+  if(!phone){ document.getElementById('submitError').textContent = 'Please enter your phone number or membership number.'; return; }
   if(!selectedPayment){ document.getElementById('submitError').textContent = 'Choose Cash or MoMo first.'; return; }
   const names = Object.keys(cart).filter(k => cart[k] > 0);
   if(names.length === 0){ document.getElementById('submitError').textContent = 'Your cart is empty.'; return; }
 
   const items = names.map(name => ({item: name, qty: cart[name]}));
-  const phone = document.getElementById('custPhone').value.trim();
   const clientId = genClientId();
 
   const btn = document.getElementById('submitBtn');
@@ -317,7 +418,7 @@ async function submitOrder(){
   btn.textContent = 'Sending order...';
   document.getElementById('submitError').textContent = '';
 
-  const orderPayload = { table: tableNumber, itemsJson: JSON.stringify(items), payment: selectedPayment, phone: phone, clientId: clientId };
+  const orderPayload = { locationType: locationType, locationDetail: locationDetail, itemsJson: JSON.stringify(items), payment: selectedPayment, customerName: custName, phone: phone, clientId: clientId };
   const result = await trySendOrder(orderPayload);
 
   if(result.ok){
@@ -326,9 +427,6 @@ async function submitOrder(){
     closeCartModal();
     showConfirmation(result.data, selectedPayment);
   }else if(result.queued){
-    // Saved locally — will retry automatically. Show a clear "please
-    // wait" screen rather than pretending it succeeded, since we
-    // don't have a real order ID yet.
     savePendingOrder(orderPayload);
     cart = {};
     updateCartBar();
@@ -337,15 +435,17 @@ async function submitOrder(){
   }else{
     document.getElementById('submitError').textContent = result.error || 'Could not submit order — please try again.';
     btn.disabled = false;
-    btn.textContent = selectedPayment === 'MoMo' ? 'SUBMIT ORDER — PAY BY MOMO' : 'SUBMIT ORDER — PAY CASH ON DELIVERY';
+    btn.textContent = selectedPayment === 'MoMo' ? 'SUBMIT ORDER — PAY BY MOMO' : 'SUBMIT ORDER — PAY CASH ON DELIVERY/PICKUP';
   }
 }
 
 async function trySendOrder(payload){
   try{
-    const url = API_URL + '?action=placeTableOrder&table=' + encodeURIComponent(payload.table) +
+    const url = API_URL + '?action=placeTableOrder&locationType=' + encodeURIComponent(payload.locationType) +
+      '&locationDetail=' + encodeURIComponent(payload.locationDetail) +
       '&itemsJson=' + encodeURIComponent(payload.itemsJson) +
       '&payment=' + encodeURIComponent(payload.payment) +
+      '&customerName=' + encodeURIComponent(payload.customerName) +
       '&phone=' + encodeURIComponent(payload.phone) +
       '&clientId=' + encodeURIComponent(payload.clientId) + '&t=' + Date.now();
     const res = await fetch(url);
@@ -404,16 +504,16 @@ function showConfirmation(data, payment){
   if(payment === 'MoMo'){
     payHtml = `<div class="momo-box">
       Send <b>GHS ${data.total.toFixed(2)}</b> via MoMo to<br>
-      <b>${momoNumber || '(number not set yet — ask your waiter)'}</b>${momoName ? ' — ' + momoName : ''}<br><br>
-      Then show the confirmation message on your phone to your waiter when they bring your order.
+      <b>${momoNumber || '(number not set yet — ask staff)'}</b>${momoName ? ' — ' + momoName : ''}<br><br>
+      Then show the confirmation message on your phone to staff when your order is delivered.
     </div>`;
   }else{
-    payHtml = `<div class="momo-box">Pay <b>GHS ${data.total.toFixed(2)}</b> in cash when your order is delivered.</div>`;
+    payHtml = `<div class="momo-box">Pay <b>GHS ${data.total.toFixed(2)}</b> in cash when your order is delivered / ready for pickup.</div>`;
   }
   el.innerHTML = `
     <div class="ok-badge">&#9989;</div>
     <h2>Order sent!</h2>
-    <div class="order-id">Order ${data.orderId} &middot; Table ${tableNumber}</div>
+    <div class="order-id">Order ${data.orderId} &middot; ${locationType}${locationDetail ? ' — ' + locationDetail : ''}</div>
     ${payHtml}
     <button class="btn" onclick="document.getElementById('confirmModal').classList.remove('show')">ORDER SOMETHING ELSE</button>`;
   document.getElementById('confirmModal').classList.add('show');
