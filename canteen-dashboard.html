@@ -1,7 +1,12 @@
 <!DOCTYPE html>
 <html lang="en">
 <!--
-  THE WHITE HOUSE GH — CANTEEN DASHBOARD (v1.0, paired with Code.gs v5.0)
+  THE WHITE HOUSE GH — CANTEEN DASHBOARD (v1.1, paired with Code.gs v5.3)
+
+  v1.1: Quick Sell menu taps sometimes needed 2-4 attempts to
+  register — fixed by no longer rebuilding the entire grid on every
+  single tap (same fix applied to bar-dashboard.html and both
+  customer order pages).
 
   Staff-facing dashboard for food orders placed via canteen-order.html.
   Deliberately a SEPARATE page/queue from bar-dashboard.html — reads
@@ -198,7 +203,7 @@ const API_URL = 'https://script.google.com/macros/s/AKfycbyycYKCEtRchk0eToXIlMLg
 // The version this canteen-dashboard.html was built to work with. If
 // the backend reports anything else, your Code.gs edits are not live
 // yet — see renderVersionBanner() below.
-const EXPECTED_BACKEND_VERSION = '5.2';
+const EXPECTED_BACKEND_VERSION = '5.3';
 
 let foodMenu = [];
 let staffList = [];
@@ -603,30 +608,48 @@ function renderQuickSellMenu(){
   if(items.length===0){ grid.innerHTML = '<div class="empty">No menu items match</div>'; return; }
   items.forEach(m => {
     const btn = document.createElement('button');
-    const qtyInCart = cart[m.item] || 0;
     btn.type = 'button';
-    btn.className = 'quick-sell-item' + (qtyInCart>0 ? ' in-cart' : '');
+    btn.className = 'quick-sell-item';
+    btn.dataset.item = m.item;
     btn.innerHTML = `
-      ${qtyInCart>0 ? `<span class="qs-cart-qty">${qtyInCart}</span>` : ''}
+      <span class="qs-cart-qty" style="display:none"></span>
       <span class="qs-name"></span>
       <span class="qs-price">&#8373;${m.price.toFixed(2)}</span>
       <span class="qs-cat"></span>`;
     btn.querySelector('.qs-name').textContent = m.item;
     btn.querySelector('.qs-cat').textContent = m.category || '';
+    // v5.3: tap only updates this one button in place (see addToCart) —
+    // rebuilding the whole grid on every tap is the classic cause of a
+    // tap "not registering the first time" on a phone.
     btn.addEventListener('click', () => addToCart(m.item));
     grid.appendChild(btn);
+    updateQuickSellCardQtyEl(btn, m.item);
   });
+}
+
+function updateQuickSellCardQtyEl(btn, itemName){
+  const qty = cart[itemName] || 0;
+  btn.classList.toggle('in-cart', qty > 0);
+  const badge = btn.querySelector('.qs-cart-qty');
+  if(qty > 0){ badge.textContent = qty; badge.style.display = ''; }
+  else { badge.style.display = 'none'; }
+}
+function updateQuickSellCardQty(itemName){
+  const grid = document.getElementById('quickSellGrid');
+  const btn = grid.querySelector(`[data-item="${CSS.escape(itemName)}"]`);
+  if(btn) updateQuickSellCardQtyEl(btn, itemName);
+  else renderQuickSellMenu();
 }
 
 function addToCart(itemName){
   cart[itemName] = (cart[itemName]||0) + 1;
-  renderQuickSellMenu();
+  updateQuickSellCardQty(itemName);
   renderQuickSellPanel();
 }
 function setCartQty(itemName, qty){
   qty = Math.max(0, Math.floor(qty) || 0);
   if(qty <= 0){ delete cart[itemName]; } else { cart[itemName] = qty; }
-  renderQuickSellMenu();
+  updateQuickSellCardQty(itemName);
   renderQuickSellPanel();
 }
 function cartSubtotal(){
