@@ -1,7 +1,15 @@
 <!DOCTYPE html>
 <html lang="en">
 <!--
-  THE WHITE HOUSE GH — TABLE ORDER PAGE (v2.1, paired with Code.gs v5.2)
+  THE WHITE HOUSE GH — TABLE ORDER PAGE (v3.0, paired with Code.gs v5.3)
+
+  v3.0 — two bug fixes:
+  1. Food ordered from this page (which shows drinks AND food
+     together) now correctly routes to the canteen's queue instead of
+     the bar's. The cart is split by item source at submit time —
+     invisible to the customer, who just taps Submit Order once.
+  2. Menu taps sometimes needed 2-4 attempts to register — fixed by
+     no longer rebuilding the entire menu grid on every single tap.
 
   v2.1: the "no connection, retrying" screen now backs off instead of
   retrying every 5 seconds flat — see canteen-order.html for why.
@@ -317,18 +325,40 @@ function renderMenu(){
   if(items.length === 0){ grid.innerHTML = '<div class="empty" style="grid-column:1/-1">No items match</div>'; return; }
   grid.innerHTML = '';
   items.forEach(m => {
-    const qty = cart[m.item] || 0;
     const el = document.createElement('div');
-    el.className = 'menu-item' + (qty>0 ? ' in-cart' : '');
-    el.innerHTML = `${qty>0 ? `<span class="mi-qty">${qty}</span>` : ''}
+    el.className = 'menu-item';
+    el.dataset.item = m.item;
+    el.innerHTML = `<span class="mi-qty" style="display:none"></span>
       <div class="mi-name"></div>
       <div class="mi-cat"></div>
       <div class="mi-price">GHS ${m.price.toFixed(2)}</div>`;
     el.querySelector('.mi-name').textContent = m.item;
     el.querySelector('.mi-cat').textContent = m.category || '';
-    el.onclick = () => { cart[m.item] = (cart[m.item]||0) + 1; renderMenu(); updateCartBar(); };
+    // v5.3: update only THIS card in place instead of calling renderMenu()
+    // (which used to tear down and rebuild the entire grid on every single
+    // tap). Destroying and recreating every card on every tap is the
+    // classic cause of a tap "not registering the first time" on a phone
+    // \u2014 the element under the user's finger can be mid-replacement when
+    // the tap resolves. Updating one card's badge/class in place removes
+    // that race entirely.
+    el.onclick = () => { cart[m.item] = (cart[m.item]||0) + 1; updateMenuCardQty(m.item); updateCartBar(); };
     grid.appendChild(el);
+    updateMenuCardQtyEl(el, m.item);
   });
+}
+
+function updateMenuCardQtyEl(el, itemName){
+  const qty = cart[itemName] || 0;
+  el.classList.toggle('in-cart', qty > 0);
+  const badge = el.querySelector('.mi-qty');
+  if(qty > 0){ badge.textContent = qty; badge.style.display = ''; }
+  else { badge.style.display = 'none'; }
+}
+function updateMenuCardQty(itemName){
+  const grid = document.getElementById('menuGrid');
+  const el = grid.querySelector(`[data-item="${CSS.escape(itemName)}"]`);
+  if(el) updateMenuCardQtyEl(el, itemName);
+  else renderMenu(); // item isn't currently rendered (e.g. filtered out) \u2014 fall back to a full render
 }
 
 function cartCount(){ return Object.values(cart).reduce((a,b)=>a+b,0); }
@@ -353,7 +383,7 @@ function updateCartBar(){
 function setQty(name, qty){
   qty = Math.max(0, Math.floor(qty)||0);
   if(qty <= 0) delete cart[name]; else cart[name] = qty;
-  renderMenu(); updateCartBar(); renderCartModal();
+  updateMenuCardQty(name); updateCartBar(); renderCartModal();
 }
 
 function openCartModal(){ document.getElementById('cartModal').classList.add('show'); renderCartModal(); }
@@ -413,38 +443,63 @@ async function submitOrder(){
   const names = Object.keys(cart).filter(k => cart[k] > 0);
   if(names.length === 0){ document.getElementById('submitError').textContent = 'Your cart is empty.'; return; }
 
-  const items = names.map(name => ({item: name, qty: cart[name]}));
-  const clientId = genClientId();
+  // v5.3: this page shows drinks AND food together, but they have to
+  // land on two different staff queues (bar vs canteen) \u2014 a mixed
+  // cart becomes two separate orders under the hood, invisible to the
+  // customer. Unknown/missing source defaults to the bar queue.
+  const barNames = names.filter(n => { const m = menu.find(mm=>mm.item===n); return !m || m.source !== 'food'; });
+  const foodNames = names.filter(n => { const m = menu.find(mm=>mm.item===n); return m && m.source === 'food'; });
+
+  const subOrders = [];
+  if(barNames.length) subOrders.push({ action: 'placeTableOrder', label: 'Drinks & Bar Items', names: barNames });
+  if(foodNames.length) subOrders.push({ action: 'placeCanteenOrder', label: 'Food', names: foodNames });
 
   const btn = document.getElementById('submitBtn');
   btn.disabled = true;
   btn.textContent = 'Sending order...';
   document.getElementById('submitError').textContent = '';
 
-  const orderPayload = { locationType: locationType, locationDetail: locationDetail, itemsJson: JSON.stringify(items), payment: selectedPayment, customerName: custName, phone: phone, clientId: clientId };
-  const result = await trySendOrder(orderPayload);
+  const outcomes = [];
+  for(const sub of subOrders){
+    const clientId = genClientId();
+    const items = sub.names.map(n => ({item: n, qty: cart[n]}));
+    const payload = { action: sub.action, label: sub.label, locationType: locationType, locationDetail: locationDetail, itemsJson: JSON.stringify(items), payment: selectedPayment, customerName: custName, phone: phone, clientId: clientId };
+    const result = await trySendOrder(payload);
+    outcomes.push({ payload, result, names: sub.names });
+  }
 
-  if(result.ok){
-    cart = {};
-    updateCartBar();
-    closeCartModal();
-    showConfirmation(result.data, selectedPayment);
-  }else if(result.queued){
-    savePendingOrder(orderPayload);
-    cart = {};
-    updateCartBar();
-    closeCartModal();
-    showQueuedScreen();
-  }else{
-    document.getElementById('submitError').textContent = result.error || 'Could not submit order — please try again.';
+  const failed = outcomes.filter(o => !o.result.ok && !o.result.queued);
+  const queued = outcomes.filter(o => o.result.queued);
+  const succeeded = outcomes.filter(o => o.result.ok);
+
+  // Remove handled items (sent or safely queued) from the cart; if part
+  // of the order hard-failed, leave just that part so it can be retried
+  // without resubmitting the part that already went through.
+  succeeded.concat(queued).forEach(o => o.names.forEach(n => delete cart[n]));
+  updateCartBar();
+  queued.forEach(o => savePendingOrder(o.payload));
+
+  if(failed.length > 0){
+    renderMenu();
+    renderCartModal();
+    const already = (succeeded.length + queued.length) > 0 ? ' The rest of your order already went through \u2014 you only need to retry this part.' : '';
+    document.getElementById('submitError').textContent = failed.map(o => (o.payload.label + ': ' + (o.result.error || 'Failed'))).join(' \u2014 ') + already;
     btn.disabled = false;
     btn.textContent = selectedPayment === 'MoMo' ? 'SUBMIT ORDER — PAY BY MOMO' : 'SUBMIT ORDER — PAY CASH ON DELIVERY/PICKUP';
+    return;
+  }
+
+  closeCartModal();
+  if(succeeded.length > 0){
+    showConfirmation(succeeded.map(o => ({ data: o.result.data, label: o.payload.label })), selectedPayment);
+  }else if(queued.length > 0){
+    showQueuedScreen();
   }
 }
 
 async function trySendOrder(payload){
   try{
-    const url = API_URL + '?action=placeTableOrder&locationType=' + encodeURIComponent(payload.locationType) +
+    const url = API_URL + '?action=' + encodeURIComponent(payload.action) + '&locationType=' + encodeURIComponent(payload.locationType) +
       '&locationDetail=' + encodeURIComponent(payload.locationDetail) +
       '&itemsJson=' + encodeURIComponent(payload.itemsJson) +
       '&payment=' + encodeURIComponent(payload.payment) +
@@ -482,7 +537,7 @@ async function resumePendingOrder(){
     if(result.ok){
       clearPendingOrder(payload.clientId);
       resumeAttempts = 0;
-      showConfirmation(result.data, payload.payment);
+      showConfirmation([{ data: result.data, label: payload.label || 'Order' }], payload.payment);
       return;
     }
   }
@@ -507,22 +562,25 @@ function showQueuedScreen(){
   document.getElementById('confirmModal').classList.add('show');
 }
 
-function showConfirmation(data, payment){
+function showConfirmation(orders, payment){
   const el = document.getElementById('confirmContent');
+  const total = orders.reduce((s,o) => s + (o.data.total||0), 0);
   let payHtml = '';
   if(payment === 'MoMo'){
     payHtml = `<div class="momo-box">
-      Send <b>GHS ${data.total.toFixed(2)}</b> via MoMo to<br>
+      Send <b>GHS ${total.toFixed(2)}</b> via MoMo to<br>
       <b>${momoNumber || '(number not set yet — ask staff)'}</b>${momoName ? ' — ' + momoName : ''}<br><br>
       Then show the confirmation message on your phone to staff when your order is delivered.
     </div>`;
   }else{
-    payHtml = `<div class="momo-box">Pay <b>GHS ${data.total.toFixed(2)}</b> in cash when your order is delivered / ready for pickup.</div>`;
+    payHtml = `<div class="momo-box">Pay <b>GHS ${total.toFixed(2)}</b> in cash when your order is delivered / ready for pickup.</div>`;
   }
+  const orderLines = orders.map(o => `<div class="order-id">${orders.length>1 ? o.label+': ' : ''}Order ${o.data.orderId} \u2014 GHS ${o.data.total.toFixed(2)}</div>`).join('');
   el.innerHTML = `
     <div class="ok-badge">&#9989;</div>
     <h2>Order sent!</h2>
-    <div class="order-id">Order ${data.orderId} &middot; ${locationType}${locationDetail ? ' — ' + locationDetail : ''}</div>
+    <div class="order-id" style="margin-bottom:6px">${locationType}${locationDetail ? ' — ' + locationDetail : ''}</div>
+    ${orderLines}
     ${payHtml}
     <button class="btn" onclick="document.getElementById('confirmModal').classList.remove('show')">ORDER SOMETHING ELSE</button>`;
   document.getElementById('confirmModal').classList.add('show');
