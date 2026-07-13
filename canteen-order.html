@@ -1,7 +1,11 @@
 <!DOCTYPE html>
 <html lang="en">
 <!--
-  THE WHITE HOUSE GH — CANTEEN ORDER PAGE (v1.2, paired with Code.gs v5.2)
+  THE WHITE HOUSE GH — CANTEEN ORDER PAGE (v1.3, paired with Code.gs v5.3)
+
+  v1.3: menu taps sometimes needed 2-4 attempts to register — fixed
+  by no longer rebuilding the entire menu grid on every single tap
+  (see order.html for the full explanation; same fix applied here).
 
   v1.2: the "no connection, retrying" screen now backs off instead of
   retrying every 5 seconds flat — if the backend is genuinely
@@ -312,18 +316,38 @@ function renderMenu(){
   if(items.length === 0){ grid.innerHTML = '<div class="empty" style="grid-column:1/-1">No items match</div>'; return; }
   grid.innerHTML = '';
   items.forEach(m => {
-    const qty = cart[m.item] || 0;
     const el = document.createElement('div');
-    el.className = 'menu-item' + (qty>0 ? ' in-cart' : '');
-    el.innerHTML = `${qty>0 ? `<span class="mi-qty">${qty}</span>` : ''}
+    el.className = 'menu-item';
+    el.dataset.item = m.item;
+    el.innerHTML = `<span class="mi-qty" style="display:none"></span>
       <div class="mi-name"></div>
       <div class="mi-cat"></div>
       <div class="mi-price">GHS ${m.price.toFixed(2)}</div>`;
     el.querySelector('.mi-name').textContent = m.item;
     el.querySelector('.mi-cat').textContent = m.category || '';
-    el.onclick = () => { cart[m.item] = (cart[m.item]||0) + 1; renderMenu(); updateCartBar(); };
+    // v5.3: update only THIS card in place instead of tearing down and
+    // rebuilding the whole grid on every tap \u2014 that rebuild pattern is
+    // the classic cause of a tap "not registering the first time" on a
+    // phone (the element under the finger can be mid-replacement when
+    // the tap resolves).
+    el.onclick = () => { cart[m.item] = (cart[m.item]||0) + 1; updateMenuCardQty(m.item); updateCartBar(); };
     grid.appendChild(el);
+    updateMenuCardQtyEl(el, m.item);
   });
+}
+
+function updateMenuCardQtyEl(el, itemName){
+  const qty = cart[itemName] || 0;
+  el.classList.toggle('in-cart', qty > 0);
+  const badge = el.querySelector('.mi-qty');
+  if(qty > 0){ badge.textContent = qty; badge.style.display = ''; }
+  else { badge.style.display = 'none'; }
+}
+function updateMenuCardQty(itemName){
+  const grid = document.getElementById('menuGrid');
+  const el = grid.querySelector(`[data-item="${CSS.escape(itemName)}"]`);
+  if(el) updateMenuCardQtyEl(el, itemName);
+  else renderMenu();
 }
 
 function cartCount(){ return Object.values(cart).reduce((a,b)=>a+b,0); }
@@ -348,7 +372,7 @@ function updateCartBar(){
 function setQty(name, qty){
   qty = Math.max(0, Math.floor(qty)||0);
   if(qty <= 0) delete cart[name]; else cart[name] = qty;
-  renderMenu(); updateCartBar(); renderCartModal();
+  updateMenuCardQty(name); updateCartBar(); renderCartModal();
 }
 
 function openCartModal(){ document.getElementById('cartModal').classList.add('show'); renderCartModal(); }
