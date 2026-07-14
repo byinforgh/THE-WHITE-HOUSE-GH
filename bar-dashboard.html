@@ -346,7 +346,7 @@ const API_URL = 'https://script.google.com/macros/s/AKfycbyycYKCEtRchk0eToXIlMLg
 // If the backend reports anything else (or nothing), that's proof
 // the live deployment is stale — see renderVersionBanner(). MUST
 // match BACKEND_VERSION in Code.gs.
-const EXPECTED_BACKEND_VERSION = '5.3';
+const EXPECTED_BACKEND_VERSION = '5.4';
 
 let barData = {stock: [], todayOrders: [], staff: [], topSellers: [], staleStock: [], restockLog: [], revenueByPayment: []};
 let activeStockCategory = 'All';
@@ -749,7 +749,7 @@ async function lookupCustomer(prefillQuery){
       resultEl.innerHTML = "No customer found matching that — they'll be registered next time they order.";
     }else{
       lastFoundCustomer = data;
-      resultEl.innerHTML = `<b>${data.custId}</b> — ${data.name}<br>Phone: ${data.phone||'—'}<br>Loyalty points: ${data.loyaltyPoints}<br>Total visits: ${data.totalVisits}<br>Last visit: ${data.lastVisit||'—'}<br><button class="btn" style="margin-top:10px" onclick="generateCustomerQR()">&#127915; GENERATE QR ID CARD</button>`;
+      resultEl.innerHTML = `<b>${data.custId}</b> — ${data.name}<br>Loyalty points: ${data.loyaltyPoints}<br>Total visits: ${data.totalVisits}<br>Last visit: ${data.lastVisit||'—'}<br><button class="btn" style="margin-top:10px" onclick="generateCustomerQR()">&#127915; GENERATE QR ID CARD</button>`;
     }
   }catch(e){
     resultEl.innerHTML = '<span style="color:var(--red)">Error: ' + (e.message||'connection failed') + '. See the yellow banner at the top of the page for the likely cause.</span>';
@@ -1208,6 +1208,7 @@ function copyShiftSummary(){
 let tableOrdersData = { active: [], recentFinal: [] };
 let seenActiveOrderIds = new Set();
 let tableOrdersFirstLoad = true;
+let lastActiveSignature = null;
 
 function playOrderBeep(){
   try{
@@ -1284,12 +1285,29 @@ function locationLabel(o){
   return loc;
 }
 
+// v5.4: signature of everything that actually affects what's on
+// screen (NOT the timestamp — see updateOrderAges). Polling every
+// 8-12s used to rebuild the whole card list even when nothing had
+// changed, which is exactly the kind of rebuild-under-a-tap that
+// causes a button to need 2-4 presses before it registers.
+function activeOrdersSignature(active){
+  return JSON.stringify((active||[]).map(o => [o.orderId, o.status, o.total, o.payment, o.locationType, o.locationDetail, o.customerName, JSON.stringify(o.items)]));
+}
+
 function renderTableOrders(){
   const el = document.getElementById('tableOrdersBody');
   const active = (tableOrdersData.active || []).slice().sort((a,b) => {
     const order = {'Placed':0, 'Preparing':1, 'Delivered - Awaiting Payment':2};
     return (order[a.status]??3) - (order[b.status]??3) || new Date(a.timestamp) - new Date(b.timestamp);
   });
+
+  const signature = activeOrdersSignature(active);
+  if(signature === lastActiveSignature){
+    updateOrderAges(); // nothing actually changed — just refresh the "X min ago" text in place
+    return;
+  }
+  lastActiveSignature = signature;
+
   if(active.length === 0){ el.innerHTML = '<div class="empty">No active table orders right now.</div>'; return; }
 
   el.innerHTML = active.map(o => {
@@ -1310,13 +1328,13 @@ function renderTableOrders(){
     }
     actionsHtml += `<button class="oa-cancel" onclick="tableOrderAction('${o.orderId}','Cancelled')">CANCEL</button>`;
 
-    return `<div class="order-card ${statusClass(o.status)}${isNew && o.status==='Placed' ? ' is-new':''}">
+    return `<div class="order-card ${statusClass(o.status)}${isNew && o.status==='Placed' ? ' is-new':''}" data-timestamp="${o.timestamp}">
       <div class="order-card-top">
         <div><span class="order-card-table">${locationLabel(o)}</span> &nbsp; <span class="order-status-pill ${statusPillClass(o.status)}">${o.status}</span></div>
         <div class="order-card-age">${orderAge(o.timestamp)}</div>
       </div>
       <div class="order-items-list">${itemsHtml}</div>
-      <div class="order-items-list" style="margin-top:-4px;color:var(--text-dim)">${o.customerName || 'no name given'}${o.phone ? ' &middot; ' + o.phone : ''}</div>
+      <div class="order-items-list" style="margin-top:-4px;color:var(--text-dim)">${o.customerName || 'no name given'}</div>
       <div class="order-card-footer">
         <span class="order-total">GHS ${o.total.toFixed(2)}</span>
         <span class="order-pay-badge">${o.payment}</span>
@@ -1324,6 +1342,16 @@ function renderTableOrders(){
       <div class="order-actions">${actionsHtml}</div>
     </div>`;
   }).join('');
+}
+
+// v5.4: updates just the "X min ago" text on existing cards, without
+// touching anything else in the DOM.
+function updateOrderAges(){
+  document.querySelectorAll('#tableOrdersBody .order-card').forEach(card => {
+    const ts = card.dataset.timestamp;
+    const ageEl = card.querySelector('.order-card-age');
+    if(ts && ageEl) ageEl.textContent = orderAge(ts);
+  });
 }
 
 async function tableOrderAction(orderId, newStatus){
