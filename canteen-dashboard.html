@@ -190,7 +190,7 @@ td{padding:7px 10px;border-bottom:1px solid #1a1a1a;}
   </div>
 
   <div class="card">
-    <div class="card-title">&#127859; FOOD MENU <span style="font-weight:400;color:var(--muted);text-transform:none;letter-spacing:0">(edit items/prices directly in the 🍽️ Food Menu sheet, then Refresh)</span></div>
+    <div class="card-title">&#127859; FOOD MENU — TODAY <span style="font-weight:400;color:var(--muted);text-transform:none;letter-spacing:0">(this list is already filtered to today's set menu; edit items/prices or the "Days Available" column directly in the 🍽️ Food Menu sheet, then Refresh)</span></div>
     <div class="tab-row" id="foodMenuTabs"></div>
     <div class="food-menu-list" id="foodMenuList"><div class="empty">Loading...</div></div>
   </div>
@@ -203,7 +203,7 @@ const API_URL = 'https://script.google.com/macros/s/AKfycbyycYKCEtRchk0eToXIlMLg
 // The version this canteen-dashboard.html was built to work with. If
 // the backend reports anything else, your Code.gs edits are not live
 // yet — see renderVersionBanner() below.
-const EXPECTED_BACKEND_VERSION = '5.3';
+const EXPECTED_BACKEND_VERSION = '5.4';
 
 let foodMenu = [];
 let staffList = [];
@@ -378,6 +378,7 @@ function populateStaffSelect(){
 let canteenOrdersData = { active: [], recentFinal: [] };
 let seenActiveOrderIds = new Set();
 let canteenOrdersFirstLoad = true;
+let lastActiveSignature = null;
 
 function playOrderBeep(){
   try{
@@ -389,6 +390,16 @@ function playOrderBeep(){
     gain.gain.setValueAtTime(0.15, ctx.currentTime);
     osc.start(); osc.stop(ctx.currentTime + 0.18);
   }catch(e){ /* silent fail — visual flash still works */ }
+}
+
+// v5.4: a signature of everything that actually affects what's on
+// screen (NOT the timestamp — see updateOrderAges below). If this is
+// identical to last time, renderCanteenOrders skips rebuilding the
+// DOM entirely. Polling every 8-12s used to rebuild the whole card
+// list even when nothing had changed, which is exactly the kind of
+// rebuild-under-a-tap that causes a button to need 2-4 presses.
+function activeOrdersSignature(active){
+  return JSON.stringify((active||[]).map(o => [o.orderId, o.status, o.total, o.payment, o.locationType, o.locationDetail, o.customerName, JSON.stringify(o.items)]));
 }
 
 async function loadCanteenOrders(){
@@ -449,6 +460,14 @@ function renderCanteenOrders(){
     const order = {'Placed':0, 'Preparing':1, 'Delivered - Awaiting Payment':2};
     return (order[a.status]??3) - (order[b.status]??3) || new Date(a.timestamp) - new Date(b.timestamp);
   });
+
+  const signature = activeOrdersSignature(active);
+  if(signature === lastActiveSignature){
+    updateOrderAges(); // nothing actually changed — just refresh the "X min ago" text in place
+    return;
+  }
+  lastActiveSignature = signature;
+
   if(active.length === 0){ el.innerHTML = '<div class="empty">No active canteen orders right now.</div>'; return; }
 
   el.innerHTML = active.map(o => {
@@ -469,13 +488,13 @@ function renderCanteenOrders(){
     }
     actionsHtml += `<button class="oa-cancel" onclick="canteenOrderAction('${o.orderId}','Cancelled')">CANCEL</button>`;
 
-    return `<div class="order-card ${statusClass(o.status)}${isNew && o.status==='Placed' ? ' is-new':''}">
+    return `<div class="order-card ${statusClass(o.status)}${isNew && o.status==='Placed' ? ' is-new':''}" data-timestamp="${o.timestamp}">
       <div class="order-card-top">
         <div><span class="order-card-loc">${locationLabel(o)}</span> &nbsp; <span class="order-status-pill ${statusPillClass(o.status)}">${o.status}</span></div>
         <div class="order-card-age">${orderAge(o.timestamp)}</div>
       </div>
       <div class="order-items-list">${itemsHtml}</div>
-      <div class="order-items-list" style="margin-top:-4px;color:var(--text-dim)">${o.customerName || 'no name given'}${o.phone ? ' &middot; ' + o.phone : ''}</div>
+      <div class="order-items-list" style="margin-top:-4px;color:var(--text-dim)">${o.customerName || 'no name given'}</div>
       <div class="order-card-footer">
         <span class="order-total">GHS ${o.total.toFixed(2)}</span>
         <span class="order-pay-badge">${o.payment}</span>
@@ -483,6 +502,17 @@ function renderCanteenOrders(){
       <div class="order-actions">${actionsHtml}</div>
     </div>`;
   }).join('');
+}
+
+// v5.4: updates just the "X min ago" text on existing cards, without
+// touching anything else in the DOM — keeps that text fresh even on
+// polls where renderCanteenOrders skipped a full rebuild.
+function updateOrderAges(){
+  document.querySelectorAll('#canteenOrdersBody .order-card').forEach(card => {
+    const ts = card.dataset.timestamp;
+    const ageEl = card.querySelector('.order-card-age');
+    if(ts && ageEl) ageEl.textContent = orderAge(ts);
+  });
 }
 
 async function canteenOrderAction(orderId, newStatus){
@@ -543,7 +573,7 @@ function renderRecentOrders(){
     const itemsStr = (o.items||[]).map(i=>`${i.qty}x ${i.item}`).join(', ');
     const statusColor = o.status === 'Paid' ? 'var(--green)' : 'var(--red)';
     const whereStr = o.locationType === 'Table' ? ('Table ' + (o.locationDetail||'?')) : (o.locationType + (o.locationDetail?' — '+o.locationDetail:''));
-    return `<tr><td style="font-family:'Space Mono',monospace;font-size:11px">${timeStr}</td><td>${whereStr}</td><td style="font-size:11px">${o.customerName||'—'}${o.phone?'<br><span style=\"color:var(--muted);font-family:\'Space Mono\',monospace\">'+o.phone+'</span>':''}</td><td style="font-size:11px;color:var(--text-dim)">${itemsStr}</td><td style="color:var(--gold);font-weight:700">&#8373;${o.total.toFixed(2)}</td><td style="color:${statusColor};font-weight:700">${o.status}</td><td>${o.handledBy||'—'}</td></tr>`;
+    return `<tr><td style="font-family:'Space Mono',monospace;font-size:11px">${timeStr}</td><td>${whereStr}</td><td style="font-size:11px">${o.customerName||'—'}</td><td style="font-size:11px;color:var(--text-dim)">${itemsStr}</td><td style="color:var(--gold);font-weight:700">&#8373;${o.total.toFixed(2)}</td><td style="color:${statusColor};font-weight:700">${o.status}</td><td>${o.handledBy||'—'}</td></tr>`;
   }).join('');
 }
 
