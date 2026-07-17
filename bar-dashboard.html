@@ -1,46 +1,18 @@
 <!DOCTYPE html>
 <html lang="en">
 <!--
-  THE WHITE HOUSE GH — BAR DASHBOARD (v5.3)
+  THE WHITE HOUSE GH — BAR DASHBOARD (v5.4)
 
-  v5.3: Quick Sell menu taps sometimes needed 2-4 attempts to
-  register — fixed by no longer rebuilding the entire grid on every
-  single tap (same fix applied to canteen-dashboard.html and both
-  customer order pages).
-
-  Renamed from dashboard.html in v5.0 — same file, clearer name.
-  Also in v5.0: Incoming Table Orders moved to the very top of the
-  page (above the low-stock banner and metrics), since it's the
-  thing staff need to react to fastest. Canteen/food orders never
-  appear here — they're on the separate canteen-dashboard.html,
-  reading a separate sheet, so bar staff are never interrupted by a
-  food order.
-
-  New in v4.9: Incoming Table Orders card — QR table ordering (from
-  order.html) shows up here live, with a beep + flash on new orders.
-  Staff move each order Placed -> Preparing -> Delivered -> Paid (or
-  Cancel), with a MoMo reference field on the Delivered step for MoMo
-  orders. Uses the same offline-queue pattern as everything else, so
-  a dropped connection just retries automatically.
-
-  New in v4.6: version-mismatch detector. The header now shows the
-  backend's reported version next to "Updated:". If Code.gs hasn't
-  actually been redeployed (still serving an older version, or an
-  old version that doesn't send a version at all), a clear red banner
-  explains exactly what to fix — no more guessing whether a redeploy
-  "took". Requires Code.gs v4.7+ to report a version at all; on an
-  older backend the banner just says "backend version unknown" and
-  tells you to redeploy.
-
-  New in v4.5: offline queue — Quick Sell and Restock now save
-  locally and auto-retry if the connection drops mid-request, instead
-  of just failing. A connection status pill (🟢/🔴) sits in the header,
-  and a banner shows any actions still waiting to sync, with a manual
-  "Retry now".
-
-  New in v4.4: Quick Sell card, camera-based QR/barcode scan-to-lookup
-  for customers + generate a printable QR ID card, and a Shift
-  Summary card with one-tap "copy as text" for sharing on WhatsApp/SMS.
+  v5.4: EXPECTED_BACKEND_VERSION bumped to '5.5' to match
+  BarSystem_Code.gs v5.5 (cocktail-sales separation + Bar-categories-
+  first menu ordering). No other changes needed here — this page
+  already just renders whatever menu array the backend sends via
+  barData.menu, and the backend now sends that array pre-sorted (Bar
+  categories first, Cocktail-family categories last), so Quick Sell
+  reorders itself automatically. The "TOP SELLERS" card below only
+  ever showed qty/revenue (no cost/margin), so there's nothing to
+  remove here either — cocktail cost/margin now lives exclusively on
+  the Manager Command Centre's COCKTAILS tab.
 -->
 <head>
 <meta charset="UTF-8">
@@ -190,7 +162,6 @@ tr.low-row{background:#1a0a0a;}
 .qr-card-box #qrCanvasHolder{display:flex;justify-content:center;}
 .qr-card-box .qr-cust-id{color:#0a0a0a;font-weight:800;font-family:'Space Mono',monospace;margin-top:8px;font-size:13px;}
 
-/* v4.9 — Incoming Table Orders */
 .order-card{background:var(--surface);border:1px solid var(--border);border-left:4px solid var(--gold);border-radius:8px;padding:14px 16px;margin-bottom:10px;}
 .order-card.status-placed{border-left-color:var(--gold);}
 .order-card.status-placed.is-new{animation:orderFlash 1.4s ease-in-out 3;}
@@ -335,26 +306,16 @@ tr.low-row{background:#1a0a0a;}
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jsQR/1.4.0/jsQR.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
 <script>
-// Fill this in once the Bar system's Apps Script web app is deployed
-// (Deploy > New deployment > Web app > copy the /exec URL). If you
-// change Code.gs later, use Deploy > Manage deployments > edit the
-// SAME deployment + "New version" — that's what makes changes go
-// live at this same URL.
 const API_URL = 'https://script.google.com/macros/s/AKfycbyycYKCEtRchk0eToXIlMLgs3RmWIsKuUppD3UprPO8zLi9N5a9PIgn9uN4IKeip24E/exec';
 
-// v5.2: the version this bar-dashboard.html was built to work with.
-// If the backend reports anything else (or nothing), that's proof
-// the live deployment is stale — see renderVersionBanner(). MUST
-// match BACKEND_VERSION in Code.gs.
-const EXPECTED_BACKEND_VERSION = '5.4';
+// v5.4: bumped to match BarSystem_Code.gs v5.5 (cocktail-sales
+// separation + menu ordering). MUST match BACKEND_VERSION in Code.gs.
+const EXPECTED_BACKEND_VERSION = '5.5';
 
 let barData = {stock: [], todayOrders: [], staff: [], topSellers: [], staleStock: [], restockLog: [], revenueByPayment: []};
 let activeStockCategory = 'All';
 let expandedMetric = null;
 
-// =====================
-// v4.5 — OFFLINE QUEUE
-// =====================
 const PENDING_KEY = 'whgh_pending_actions_v1';
 
 function genClientId(){
@@ -362,18 +323,10 @@ function genClientId(){
   return 'cid-' + Date.now() + '-' + Math.random().toString(36).slice(2);
 }
 
-// v5.2: exponential backoff with jitter for queued-action retries.
-// Without this, every device with something queued retries on the
-// exact same fixed interval — fine for one device, but if a real
-// overload queues actions on many devices at once, everyone retrying
-// in lockstep every 30s just recreates the burst that caused the
-// problem. Backoff spaces retries out over time; jitter (randomizing
-// within that window) spreads devices that started at the same
-// moment so they don't stay synchronized.
 function backoffDelayMs(attempts){
   const base = 4000, cap = 60000;
   const raw = Math.min(cap, base * Math.pow(2, attempts));
-  return raw * (0.5 + Math.random() * 0.5); // jittered to 50-100% of the raw delay
+  return raw * (0.5 + Math.random() * 0.5);
 }
 
 function getPendingQueue(){
@@ -381,7 +334,7 @@ function getPendingQueue(){
   catch(e){ return []; }
 }
 function savePendingQueue(queue){
-  try{ localStorage.setItem(PENDING_KEY, JSON.stringify(queue)); }catch(e){ /* storage full/unavailable — nothing more we can do client-side */ }
+  try{ localStorage.setItem(PENDING_KEY, JSON.stringify(queue)); }catch(e){ }
 }
 function queueAction(kind, label, url, clientId){
   const queue = getPendingQueue();
@@ -413,7 +366,7 @@ async function flushPendingQueue(silent){
   const stillPending = [];
   let succeeded = 0;
   for(const action of queue){
-    if(action.nextRetryAt && action.nextRetryAt > now){ stillPending.push(action); continue; } // not due yet — back off
+    if(action.nextRetryAt && action.nextRetryAt > now){ stillPending.push(action); continue; }
     try{
       const res = await fetch(action.url + '&clientId=' + encodeURIComponent(action.id));
       if(!res.ok) throw new Error('status ' + res.status);
@@ -467,9 +420,6 @@ function clearApiError(){
   document.getElementById('errorBanner').classList.remove('active');
 }
 
-// v4.6: separate, louder banner specifically for "the deployment is
-// running old code" — distinct from a hard connection failure, and
-// gives the exact click path instead of a generic message.
 function renderVersionBanner(reportedVersion){
   const el = document.getElementById('versionBanner');
   const pill = document.getElementById('versionPill');
@@ -515,7 +465,7 @@ async function loadData(){
     renderStaleStock();
     renderRestockLog();
     populateStaffDropdowns();
-    populateTableOrderStaffSelect(); // v4.9
+    populateTableOrderStaffSelect();
     populateStockDatalist();
     renderQuickSellTabs();
     renderQuickSellMenu();
@@ -905,9 +855,6 @@ function renderQuickSellMenu(){
       <span class="qs-cat"></span>`;
     btn.querySelector('.qs-name').textContent = m.item;
     btn.querySelector('.qs-cat').textContent = m.category || '';
-    // v5.3: tap only updates this one button in place (see addToCart) —
-    // rebuilding the whole grid on every tap is the classic cause of a
-    // tap "not registering the first time" on a phone.
     btn.addEventListener('click', () => addToCart(m.item));
     grid.appendChild(btn);
     updateQuickSellCardQtyEl(btn, m.item);
@@ -1202,9 +1149,6 @@ function copyShiftSummary(){
   });
 }
 
-// =====================
-// v4.9 — INCOMING TABLE ORDERS (QR ordering)
-// =====================
 let tableOrdersData = { active: [], recentFinal: [] };
 let seenActiveOrderIds = new Set();
 let tableOrdersFirstLoad = true;
@@ -1219,7 +1163,7 @@ function playOrderBeep(){
     osc.frequency.value = 880;
     gain.gain.setValueAtTime(0.15, ctx.currentTime);
     osc.start(); osc.stop(ctx.currentTime + 0.18);
-  }catch(e){ /* audio not available — silent fail, visual flash still works */ }
+  }catch(e){ }
 }
 
 function populateTableOrderStaffSelect(){
@@ -1285,11 +1229,6 @@ function locationLabel(o){
   return loc;
 }
 
-// v5.4: signature of everything that actually affects what's on
-// screen (NOT the timestamp — see updateOrderAges). Polling every
-// 8-12s used to rebuild the whole card list even when nothing had
-// changed, which is exactly the kind of rebuild-under-a-tap that
-// causes a button to need 2-4 presses before it registers.
 function activeOrdersSignature(active){
   return JSON.stringify((active||[]).map(o => [o.orderId, o.status, o.total, o.payment, o.locationType, o.locationDetail, o.customerName, JSON.stringify(o.items)]));
 }
@@ -1303,7 +1242,7 @@ function renderTableOrders(){
 
   const signature = activeOrdersSignature(active);
   if(signature === lastActiveSignature){
-    updateOrderAges(); // nothing actually changed — just refresh the "X min ago" text in place
+    updateOrderAges();
     return;
   }
   lastActiveSignature = signature;
@@ -1344,8 +1283,6 @@ function renderTableOrders(){
   }).join('');
 }
 
-// v5.4: updates just the "X min ago" text on existing cards, without
-// touching anything else in the DOM.
 function updateOrderAges(){
   document.querySelectorAll('#tableOrdersBody .order-card').forEach(card => {
     const ts = card.dataset.timestamp;
@@ -1374,18 +1311,12 @@ async function tableOrderAction(orderId, newStatus){
 
   if(result.ok || result.queued){
     loadTableOrders();
-    if(newStatus === 'Paid') loadData(); // refresh revenue/stock/top sellers too
+    if(newStatus === 'Paid') loadData();
   }else{
     alert('Could not update order: ' + result.error);
   }
 }
 
-// v5.2: jittered, self-rescheduling polling instead of a fixed
-// setInterval. If every staff device loaded the page around the
-// same time (e.g. right before an event), fixed intervals mean they
-// all poll at the exact same moment forever — jitter spreads that
-// out so the read load is smoother over time instead of arriving in
-// synchronized spikes every 10/30 seconds.
 function scheduleNext(fn, baseMs, jitterMs){
   const delay = baseMs + Math.random() * jitterMs;
   setTimeout(function(){
@@ -1394,9 +1325,9 @@ function scheduleNext(fn, baseMs, jitterMs){
 }
 
 loadData();
-scheduleNext(loadData, 25000, 10000); // ~25-35s
+scheduleNext(loadData, 25000, 10000);
 loadTableOrders();
-scheduleNext(loadTableOrders, 8000, 4000); // ~8-12s — customers are waiting
+scheduleNext(loadTableOrders, 8000, 4000);
 </script>
 </body>
 </html>
