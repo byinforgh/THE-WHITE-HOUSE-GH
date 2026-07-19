@@ -215,7 +215,15 @@ td{padding:7px 10px;border-bottom:1px solid #1a1a1a;}
   </div>
 </div>
 
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script>
+// SUPABASE MIGRATION: Canteen Orders read/write now goes straight to
+// Postgres, same pattern as bar-dashboard.html's Table Orders. Quick
+// Sell and everything else here is still on the Apps Script API_URL.
+const SUPABASE_URL = 'https://crvuzkyfrqbfmamegxjx.supabase.co';
+const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNydnV6a3lmcnFiZm1hbWVneGp4Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODQ0MzI5NjQsImV4cCI6MjEwMDAwODk2NH0.gMsv3yvw6plDCherA2YdU4UgWRMXUc9H1Hr_IdR9GxA';
+const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
 // Same deployment/exec URL as bar-dashboard.html and members-dashboard.html.
 const API_URL = 'https://script.google.com/macros/s/AKfycbyycYKCEtRchk0eToXIlMLgs3RmWIsKuUppD3UprPO8zLi9N5a9PIgn9uN4IKeip24E/exec';
 
@@ -416,18 +424,33 @@ function activeOrdersSignature(active){
     + '|proc:' + Array.from(processingOrderIds).sort().join(',');
 }
 
+function shapeSupabaseOrderRow(r){
+  return {
+    orderId: r.order_id, locationType: r.location_type, locationDetail: r.location_detail || '',
+    items: r.items_json || [], total: parseFloat(r.total_ghs) || 0, payment: r.payment_method,
+    status: r.status, momoRef: r.momo_reference || '', customerName: r.customer_name,
+    phone: r.customer_phone, handledBy: r.handled_by || '', timestamp: r.created_at
+  };
+}
+
 async function loadCanteenOrders(){
   try{
-    const res = await fetch(API_URL + '?action=getCanteenOrders&t=' + Date.now());
-    if(!res.ok) throw new Error('status ' + res.status);
-    const data = await res.json();
-    if(!data.success) throw new Error(data.error || 'Failed to load canteen orders');
-    canteenOrdersData = data;
+    const { data, error } = await supabaseClient
+      .from('canteen_orders')
+      .select('*')
+      .order('created_at', { ascending: false })
+      .limit(200);
+    if(error) throw new Error(error.message);
 
-    const currentIds = new Set(data.active.map(o=>o.orderId));
+    const shaped = data.map(shapeSupabaseOrderRow);
+    const active = shaped.filter(o => o.status !== 'Paid' && o.status !== 'Cancelled');
+    const recentFinal = shaped.filter(o => o.status === 'Paid' || o.status === 'Cancelled').slice(0, 15);
+    canteenOrdersData = { success: true, active: active, recentFinal: recentFinal };
+
+    const currentIds = new Set(active.map(o=>o.orderId));
     let hasNewPlaced = false;
     if(!canteenOrdersFirstLoad){
-      data.active.forEach(o => { if(o.status === 'Placed' && !seenActiveOrderIds.has(o.orderId)) hasNewPlaced = true; });
+      active.forEach(o => { if(o.status === 'Placed' && !seenActiveOrderIds.has(o.orderId)) hasNewPlaced = true; });
     }
     if(hasNewPlaced) playOrderBeep();
     seenActiveOrderIds = currentIds;
@@ -559,17 +582,31 @@ async function canteenOrderAction(orderId, newStatus){
   lastActiveSignature = null;
   renderCanteenOrders();
 
-  let url = API_URL + '?action=updateCanteenOrderStatus&orderId=' + encodeURIComponent(orderId) + '&newStatus=' + encodeURIComponent(newStatus) + '&staffInitials=' + encodeURIComponent(staffInitials);
-  if(momoReference) url += '&momoReference=' + encodeURIComponent(momoReference);
-  url += '&t=' + Date.now();
-
-  const clientId = genClientId();
-  const label = `Canteen order ${orderId} -> ${newStatus}`;
-  const result = await fetchOrQueue(url, 'canteenOrder', label, clientId);
+  // SUPABASE MIGRATION: calls the same mark_location_order_paid /
+  // set_location_order_status functions as bar-dashboard.html, just
+  // pointed at canteen_orders instead of table_orders.
+  let result;
+  try{
+    let rpcResult;
+    if(newStatus === 'Paid'){
+      rpcResult = await supabaseClient.rpc('mark_location_order_paid', {
+        p_table: 'canteen_orders', p_order_id: orderId, p_staff: staffInitials, p_momo: momoReference || null
+      });
+    }else{
+      rpcResult = await supabaseClient.rpc('set_location_order_status', {
+        p_table: 'canteen_orders', p_order_id: orderId, p_new_status: newStatus, p_staff: staffInitials,
+        p_reason: null
+      });
+    }
+    if(rpcResult.error) throw new Error(rpcResult.error.message);
+    result = { ok: true };
+  }catch(e){
+    result = { ok: false, error: e.message };
+  }
 
   processingOrderIds.delete(orderId);
 
-  if(result.ok || result.queued){
+  if(result.ok){
     if(newStatus === 'Paid' || newStatus === 'Cancelled') delete orderStaffSelections[orderId];
     lastActiveSignature = null;
     loadCanteenOrders();
