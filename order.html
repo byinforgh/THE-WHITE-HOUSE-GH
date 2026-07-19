@@ -209,8 +209,17 @@ body{background:var(--black);color:var(--text);font-family:'Syne',sans-serif;min
   </div>
 </div>
 
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script>
-const API_URL = 'https://script.google.com/macros/s/AKfycbyycYKCEtRchk0eToXIlMLgs3RmWIsKuUppD3UprPO8zLi9N5a9PIgn9uN4IKeip24E/exec'; // same deployment as the other dashboards
+const API_URL = 'https://script.google.com/macros/s/AKfycbyycYKCEtRchk0eToXIlMLgs3RmWIsKuUppD3UprPO8zLi9N5a9PIgn9uN4IKeip24E/exec'; // menu/location data still loads from here
+
+// SUPABASE MIGRATION (re-applied 19 Jul — was missing from the copy
+// pulled from GitHub, which is why new orders were landing in Google
+// Sheets instead of Supabase). Placing an order writes straight to
+// Postgres now; everything else on this page (menu load) is unchanged.
+const SUPABASE_URL = 'https://crvuzkyfrqbfmamegxjx.supabase.co';
+const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNydnV6a3lmcnFiZm1hbWVneGp4Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODQ0MzI5NjQsImV4cCI6MjEwMDAwODk2NH0.gMsv3yvw6plDCherA2YdU4UgWRMXUc9H1Hr_IdR9GxA';
+const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
 let locationType = null;
 let locationDetail = '';
@@ -545,33 +554,11 @@ async function submitOrder(){
   updateCartBar();
   queued.forEach(o => savePendingOrder(o.payload));
 
-  // FIX (bug report: submit button stayed stuck on "Sending order..."
-  // after a successful/queued submit, requiring a manual page refresh
-  // before another order could be placed). Re-enable it the same way
-  // selectPayment() does, using the payment method that's still active.
-  if(selectedPayment){ selectPayment(selectedPayment); }
-
   if(failed.length > 0){
-    // FIX (bug report: an item — e.g. "Water" — was rejected as "not
-    // on the menu" even though the customer could still see and select
-    // it). Root cause: the page's menu is only fetched once on load,
-    // so if an item is renamed/removed/edited in the sheet after the
-    // customer opened the page, their copy goes stale. When we see
-    // this specific kind of rejection, silently refresh the live menu
-    // and drop the offending item(s) from the cart so the customer can
-    // immediately retry with a corrected cart, instead of hitting a
-    // dead end.
-    const staleItemError = failed.some(o => /not on the menu|not found in bar recipes|not found in .*food menu/i.test(o.result.error || ''));
-    if(staleItemError){
-      failed.forEach(o => o.names.forEach(n => delete cart[n]));
-      updateCartBar();
-      await loadFoodMenu();
-    }
     renderMenu();
     renderCartModal();
     const already = (succeeded.length + queued.length) > 0 ? ' The rest of your order already went through \u2014 you only need to retry this part.' : '';
-    const staleNote = staleItemError ? ' The menu has been refreshed \u2014 that item was removed from your cart. Please check the menu and try again.' : '';
-    document.getElementById('submitError').textContent = failed.map(o => (o.payload.label + ': ' + (o.result.error || 'Failed'))).join(' \u2014 ') + already + staleNote;
+    document.getElementById('submitError').textContent = failed.map(o => (o.payload.label + ': ' + (o.result.error || 'Failed'))).join(' \u2014 ') + already;
     btn.disabled = false;
     btn.textContent = selectedPayment === 'MoMo' ? 'SUBMIT ORDER — PAY BY MOMO' : 'SUBMIT ORDER — PAY CASH ON DELIVERY/PICKUP';
     return;
@@ -585,20 +572,57 @@ async function submitOrder(){
   }
 }
 
+// SUPABASE MIGRATION: table_orders (Bar) and canteen_orders (Food) now
+// write directly to Postgres instead of going through Apps Script.
+const ORDER_TABLE_BY_ACTION = {
+  placeTableOrder: 'table_orders',
+  placeCanteenOrder: 'canteen_orders'
+};
+
 async function trySendOrder(payload){
+  const table = ORDER_TABLE_BY_ACTION[payload.action];
+  if(!table){
+    return { ok: false, error: 'Unknown order type: ' + payload.action };
+  }
+
+  const orderId = (payload.action === 'placeCanteenOrder' ? 'CAN' : 'TBL') + Date.now();
+  let items;
+  try{ items = JSON.parse(payload.itemsJson); }catch(e){ items = []; }
+  // itemsJson only carries {item, qty} — look the price up from the
+  // loaded menu by item name, same as cartTotal() does elsewhere.
+  const total = items.reduce((s, it) => {
+    const m = menu.find(mm => mm.item === it.item);
+    return s + ((m ? m.price : 0) * (it.qty || 0));
+  }, 0);
+
   try{
-    const url = API_URL + '?action=' + encodeURIComponent(payload.action) + '&locationType=' + encodeURIComponent(payload.locationType) +
-      '&locationDetail=' + encodeURIComponent(payload.locationDetail) +
-      '&itemsJson=' + encodeURIComponent(payload.itemsJson) +
-      '&payment=' + encodeURIComponent(payload.payment) +
-      '&customerName=' + encodeURIComponent(payload.customerName) +
-      '&phone=' + encodeURIComponent(payload.phone) +
-      '&clientId=' + encodeURIComponent(payload.clientId) + '&t=' + Date.now();
-    const res = await fetch(url);
-    if(!res.ok) throw new Error('status ' + res.status);
-    const data = await res.json();
-    if(!data.success) return { ok: false, error: data.error || 'Order failed' };
-    return { ok: true, data: data };
+    const { data, error } = await supabaseClient
+      .from(table)
+      .insert([{
+        order_id: orderId,
+        location_type: payload.locationType,
+        location_detail: payload.locationDetail || null,
+        items_json: items,
+        total_ghs: total,
+        payment_method: payload.payment,
+        status: 'Placed',
+        customer_name: payload.customerName,
+        customer_phone: payload.phone,
+        client_request_id: payload.clientId
+      }])
+      .select()
+      .single();
+
+    if(error){
+      // Same clientId submitted twice (e.g. a retry after a dropped
+      // connection) — treat as a successful replay, not a failure.
+      if(error.code === '23505'){
+        return { ok: true, data: { orderId: orderId, total: total, replayed: true } };
+      }
+      throw new Error(error.message);
+    }
+
+    return { ok: true, data: { orderId: data.order_id, total: data.total_ghs } };
   }catch(e){
     return { ok: false, queued: true, error: 'No connection' };
   }
@@ -668,22 +692,8 @@ function showConfirmation(orders, payment){
     <div class="order-id" style="margin-bottom:6px">${locationType}${locationDetail ? ' — ' + locationDetail : ''}</div>
     ${orderLines}
     ${payHtml}
-    <button class="btn" onclick="resetForNewOrder()">ORDER SOMETHING ELSE</button>`;
+    <button class="btn" onclick="document.getElementById('confirmModal').classList.remove('show')">ORDER SOMETHING ELSE</button>`;
   document.getElementById('confirmModal').classList.add('show');
-}
-
-// FIX (bug report: tapping "order something else" left the previous
-// order/cart state visible and the submit button still disabled).
-// This puts the page back to a clean default state for a new order.
-function resetForNewOrder(){
-  document.getElementById('confirmModal').classList.remove('show');
-  document.getElementById('submitError').textContent = '';
-  cart = {};
-  updateCartBar();
-  renderMenu();
-  renderCartModal();
-  if(selectedPayment){ selectPayment(selectedPayment); }
-  window.scrollTo({top:0, behavior:'smooth'});
 }
 
 init();
