@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>THE WHITE HOUSE GH — Members Dashboard</title>
+<title>THE WHITE HOUSE EVENTS & MORE — Members Dashboard</title>
 <link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Syne:wght@400;600;700;800&display=swap" rel="stylesheet">
 <style>
 :root{--black:#0a0a0a;--surface:#111111;--card:#181818;--border:#2a2a2a;--gold:#f5c842;--gold-dim:#c8a22a;--green:#22c55e;--red:#ef4444;--teal:#3fb6a8;--purple:#a855f7;--muted:#888;--text:#f2f2f2;--text-dim:#b5b5b5;}
@@ -36,8 +36,10 @@
 .contact-table th{text-align:left;padding:8px 10px;color:var(--muted);font-weight:700;letter-spacing:1px;border-bottom:1px solid var(--border);font-size:10px;}
 .contact-table td{padding:8px 10px;border-bottom:1px solid #1a1a1a;vertical-align:middle;}
 .contact-table tr:hover td{background:#1c1c1c;}
-.search-input{background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:10px 14px;color:var(--text);font-size:13px;font-family:'Syne',sans-serif;width:100%;margin-bottom:14px;outline:none;}.search-input:focus{border-color:var(--gold);}
-input[type=text],input[type=tel],input[type=number],select,textarea{background:var(--surface);border:1px solid var(--border);color:var(--text);padding:8px 12px;border-radius:5px;font-family:'Syne',sans-serif;font-size:12px;width:100%;outline:none;}
+/* v1.1 rebrand pass: input font-sizes raised to 16px — iOS Safari
+   auto-zooms the page when focusing any input under 16px. */
+.search-input{background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:10px 14px;color:var(--text);font-size:16px;font-family:'Syne',sans-serif;width:100%;margin-bottom:14px;outline:none;}.search-input:focus{border-color:var(--gold);}
+input[type=text],input[type=tel],input[type=number],select,textarea{background:var(--surface);border:1px solid var(--border);color:var(--text);padding:8px 12px;border-radius:5px;font-family:'Syne',sans-serif;font-size:16px;width:100%;outline:none;}
 select:focus,input:focus,textarea:focus{border-color:var(--gold);}
 .rank-badge{display:inline-flex;align-items:center;justify-content:center;width:24px;height:24px;border-radius:50%;background:var(--border);font-family:'Space Mono',monospace;font-size:11px;font-weight:700;}
 .rank-1{background:var(--gold);color:var(--black);}.rank-2{background:#c0c0c0;color:var(--black);}.rank-3{background:#c9861a;color:var(--black);}
@@ -53,7 +55,6 @@ select:focus,input:focus,textarea:focus{border-color:var(--gold);}
 .activity-row{padding:8px 0;border-bottom:1px solid #1a1a1a;font-size:12px;display:flex;justify-content:space-between;gap:10px;}
 .badge-source{font-size:9px;padding:2px 6px;border-radius:3px;font-weight:700;letter-spacing:1px;}
 .src-bar{background:#1a1500;color:var(--gold);}.src-booking{background:#001a10;color:var(--teal);}.src-landing{background:#0a0020;color:var(--purple);}
-/* Membership status badges — Regular (free, default) vs VIP (paid subscription) */
 .badge-membership{font-size:9px;padding:3px 9px;border-radius:12px;font-weight:800;letter-spacing:0.5px;font-family:'Space Mono',monospace;display:inline-block;}
 .badge-membership.regular{background:#161616;color:var(--text-dim);border:1px solid var(--border);}
 .badge-membership.vip{background:#2a2006;color:var(--gold);border:1px solid var(--gold-dim);}
@@ -63,7 +64,6 @@ select:focus,input:focus,textarea:focus{border-color:var(--gold);}
 .small-btn{background:var(--gold);color:var(--black);border:none;padding:7px 14px;border-radius:5px;cursor:pointer;font-size:11px;font-weight:800;letter-spacing:0.5px;font-family:'Syne',sans-serif;white-space:nowrap;}
 .small-btn:hover{background:var(--gold-dim);}
 .small-btn.ghost{background:var(--border);color:var(--text);}
-/* Footer follow/website links — inactive (plain text) until a URL is filled in below in JS config */
 .footer-links{display:flex;flex-wrap:wrap;gap:8px;justify-content:center;padding:18px 0 6px;}
 .footer-link{font-size:11px;color:var(--muted);text-decoration:none;padding:6px 12px;border:1px solid var(--border);border-radius:20px;}
 .footer-link.live{color:var(--teal);border-color:var(--teal);}
@@ -72,7 +72,7 @@ select:focus,input:focus,textarea:focus{border-color:var(--gold);}
 <body>
 <div class="header">
   <div class="logo-row">
-    <img src="logo-white.png" alt="THE WHITE HOUSE GH" onerror="this.onerror=null;this.replaceWith(Object.assign(document.createElement('div'),{className:'brand-fallback',textContent:'THE WHITE HOUSE GH'}));">
+    <img src="logo-white.png" alt="THE WHITE HOUSE EVENTS & MORE" onerror="this.onerror=null;this.replaceWith(Object.assign(document.createElement('div'),{className:'brand-fallback',textContent:'THE WHITE HOUSE EVENTS & MORE'}));">
     <span>MEMBERS DASHBOARD</span>
   </div>
   <div class="header-right"><span class="last-refresh" id="lastRefresh">Loading...</span><button class="refresh-btn" onclick="loadData()">&#8635; REFRESH</button></div>
@@ -217,10 +217,10 @@ select:focus,input:focus,textarea:focus{border-color:var(--gold);}
 <script>
 const API_URL = 'https://script.google.com/macros/s/AKfycbyyGLRGOhHrtT_zXj-99tW8Cbril7OZcygt5oiiS5NApxtsYLUt3bDA5b8W2LbjQpFrNw/exec';
 
-/* -----------------------------------------------------------
-   FOOTER LINKS — leave url blank for now. Fill one in later and
-   it automatically becomes a clickable link in the dashboard footer.
-   ----------------------------------------------------------- */
+/* NOTE (rebrand): same caveat as registration.html — these URLs still
+   point at the old "thewhitehousegh" handles. Update them if/when
+   real accounts exist under the new name; left untouched rather than
+   guessed. */
 const FOOTER_LINKS = [
   { name:'TikTok',          url:'https://www.tiktok.com/@thewhitehousegh' },
   { name:'Instagram',       url:'https://www.instagram.com/thewhitehousegh' },
@@ -268,8 +268,6 @@ async function loadData(){
     state = data;
     document.getElementById('lastRefresh').textContent = 'Updated: ' + new Date().toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit'});
     renderToday();
-    // Keep whichever secondary tab is currently visible in sync too,
-    // since a refresh can happen while the person is on any tab.
     if(document.getElementById('tab-rewards').classList.contains('active')){ renderRewards(); renderVIPRequests(); }
     if(document.getElementById('tab-customers').classList.contains('active')) renderCustomers();
     if(document.getElementById('tab-leaderboard').classList.contains('active')) renderLeaderboard();
@@ -297,11 +295,6 @@ function renderToday(){
 
 function renderLeaderboard(){
   const lb = state.leaderboard || [];
-  // This view may be projected/shown publicly (e.g. a screen at the
-  // venue), so it deliberately shows ONLY rank, name, points, and a
-  // VIP badge — no member ID, phone, business name, or anything else
-  // that could identify or expose a member's contact details. A VIP
-  // tag is not contact info, so it's safe to include here.
   document.getElementById('leaderboardList').innerHTML = lb.length ? lb.map((c,i)=>`
     <div class="reward-item">
       <div style="display:flex;align-items:center;gap:14px">
@@ -352,9 +345,6 @@ function quickSetMembership(custId, status){
   showToast('Confirm the status change for ' + custId + ' below');
 }
 
-// =====================
-// MEMBERSHIP — Regular (free) / VIP (paid subscription)
-// =====================
 function renderVIPRequests(){
   const reqs = state.vipRequests || [];
   const el = document.getElementById('vipRequestsList');
@@ -376,9 +366,6 @@ function renderVIPRequests(){
     </div>`).join('');
 }
 function dismissVIPRequestRow(custId){
-  // Purely a local UI dismiss (the underlying "VIP REQUESTED" stamp
-  // stays in Notes on the sheet either way) — lets staff clear a row
-  // they've already actioned off-system without setting VIP status.
   const row = document.querySelector(`.vip-request-row[data-cust="${CSS.escape(custId)}"]`);
   if(row) row.remove();
 }
