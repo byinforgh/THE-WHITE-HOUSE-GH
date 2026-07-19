@@ -1,7 +1,21 @@
 <!DOCTYPE html>
 <html lang="en">
 <!--
-  THE WHITE HOUSE GH — CANTEEN ORDER PAGE (v1.3, paired with Code.gs v5.3)
+  THE WHITE HOUSE EVENTS & MORE — CANTEEN ORDER PAGE (v1.4, paired with Code.gs v5.7)
+
+  v1.4 CHANGES:
+  - REBRAND: "The White House GH" -> "The White House Events & More".
+  - LOCATION TYPES: "Delivery" replaced with "Terrace Area" everywhere
+    (backend ORDER_LOCATION_TYPES changed in Code.gs v5.6) — Terrace
+    Area behaves like Bar Area/VIP Area/Pool/Stage Area (no extra
+    detail field needed), so the old Delivery-specific address prompt
+    is gone. "Stage 2 Area" added the same way, no code changes
+    needed beyond the fallback list below since it needs no detail
+    either.
+  - iOS ZOOM FIX: .search-input font-size raised from 14px to 16px —
+    iOS Safari auto-zooms the page on focusing any input under 16px,
+    which was the cause of the "screen moves, need two fingers to
+    shrink it back" report.
 
   v1.3: menu taps sometimes needed 2-4 attempts to register — fixed
   by no longer rebuilding the entire menu grid on every single tap
@@ -13,12 +27,11 @@
   hammering it every 5s makes that worse, not better.
 
   v1.1: added Table (1-50) as a location option alongside Pickup,
-  Delivery, Room Number, Bar Area, VIP Area, Pool, Stage Area — same
-  location picker as order.html now uses. Name and phone/membership
-  number are both required on every order (previously phone was
-  optional) so staff always know whose order it is, at any location,
-  and so a first-time customer gets registered as a member correctly
-  when the order is marked Paid.
+  Room Number, Bar Area, VIP Area, Pool, Stage Area — same location
+  picker as order.html now uses. Name and phone/membership number are
+  both required on every order so staff always know whose order it
+  is, at any location, and so a first-time customer gets registered
+  as a member correctly when the order is marked Paid.
 
   This is the customer-facing food ordering page — separate from
   order.html (which is for bar/table drink orders). Orders go to the
@@ -43,7 +56,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>The White House GH — Canteen Order</title>
+<title>The White House Events & More — Canteen Order</title>
 <link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Syne:wght@400;600;700;800&display=swap" rel="stylesheet">
 <style>
 :root{--black:#0a0a0a;--surface:#111111;--card:#181818;--border:#2a2a2a;--gold:#f5a623;--gold-dim:#c9861a;--teal:#3fb6a8;--red:#ef4444;--green:#22c55e;--text:#f2f2f2;--text-dim:#b5b5b5;--muted:#888;}
@@ -59,7 +72,9 @@ body{background:var(--black);color:var(--text);font-family:'Syne',sans-serif;min
 .loc-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:6px;}
 .loc-option{background:var(--card);border:2px solid var(--border);border-radius:10px;padding:12px 10px;text-align:center;cursor:pointer;font-size:13px;font-weight:700;}
 .loc-option.selected{border-color:var(--gold);background:#1e1706;color:var(--gold);}
-.search-input{background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:12px 14px;color:var(--text);font-size:14px;width:100%;margin-bottom:12px;outline:none;font-family:'Syne',sans-serif;}
+/* v1.4: font-size raised from 14px to 16px to fix the iOS pinch-zoom
+   bug (Safari auto-zooms on focusing any input under 16px). */
+.search-input{background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:12px 14px;color:var(--text);font-size:16px;width:100%;margin-bottom:12px;outline:none;font-family:'Syne',sans-serif;}
 .search-input:focus{border-color:var(--gold);}
 .btn{background:var(--gold);color:var(--black);border:none;padding:14px;border-radius:8px;font-size:14px;font-weight:800;width:100%;cursor:pointer;font-family:'Syne',sans-serif;margin-top:8px;}
 .btn:disabled{opacity:0.5;}
@@ -116,7 +131,7 @@ body{background:var(--black);color:var(--text);font-family:'Syne',sans-serif;min
 <body>
 
 <div class="header">
-  <div class="logo">THE WHITE HOUSE GH</div>
+  <div class="logo">THE WHITE HOUSE EVENTS & MORE</div>
   <div class="loc-pill" id="locPill">Canteen Order</div>
 </div>
 
@@ -185,6 +200,8 @@ const API_URL = 'https://script.google.com/macros/s/AKfycbyycYKCEtRchk0eToXIlMLg
 let locationType = null;
 let locationDetail = '';
 let menu = [];
+// v1.4: fallback list only used if the live fetch to the backend
+// fails entirely — kept in sync with ORDER_LOCATION_TYPES in Code.gs.
 let locationTypes = [];
 let momoNumber = '';
 let momoName = '';
@@ -225,7 +242,7 @@ async function loadFoodMenu(afterLoad){
     menu = data.menu || [];
     momoNumber = data.momoNumber || '';
     momoName = data.momoName || '';
-    locationTypes = data.locationTypes || ['Pickup','Delivery','Room Number','Bar Area','VIP Area','Pool','Stage Area'];
+    locationTypes = data.locationTypes || ['Pickup','Terrace Area','Room Number','Bar Area','VIP Area','Pool','Stage Area','Stage 2 Area'];
     renderLocationOptions();
     renderTabs();
     renderMenu();
@@ -278,15 +295,10 @@ function selectLocation(loc, skipDetailReset){
     detailInput.placeholder = 'e.g. 204';
     detailInput.value = locationDetail;
     detailInput.oninput = () => { locationDetail = detailInput.value.trim(); };
-  }else if(loc === 'Delivery'){
-    detailBox.style.display = 'block';
-    detailLabel.textContent = 'Delivery Address / Description';
-    detailSelect.style.display = 'none';
-    detailInput.style.display = 'block';
-    detailInput.placeholder = 'e.g. 12 Ridge Avenue, near the junction';
-    detailInput.value = locationDetail;
-    detailInput.oninput = () => { locationDetail = detailInput.value.trim(); };
   }else{
+    // v1.4: "Delivery" (which needed an address) is gone — Terrace
+    // Area, Stage 2 Area, Bar Area, VIP Area, Pool, and Stage Area
+    // are all just a spot on the property, no extra detail needed.
     detailBox.style.display = 'none';
   }
 }
@@ -326,11 +338,6 @@ function renderMenu(){
       <div class="mi-price">GHS ${m.price.toFixed(2)}</div>`;
     el.querySelector('.mi-name').textContent = m.item;
     el.querySelector('.mi-cat').textContent = m.category || '';
-    // v5.3: update only THIS card in place instead of tearing down and
-    // rebuilding the whole grid on every tap \u2014 that rebuild pattern is
-    // the classic cause of a tap "not registering the first time" on a
-    // phone (the element under the finger can be mid-replacement when
-    // the tap resolves).
     el.onclick = () => { cart[m.item] = (cart[m.item]||0) + 1; updateMenuCardQty(m.item); updateCartBar(); };
     grid.appendChild(el);
     updateMenuCardQtyEl(el, m.item);
@@ -421,8 +428,10 @@ async function submitOrder(){
     document.getElementById('submitError').textContent = 'Please choose a table number above the menu.';
     closeCartModal(); window.scrollTo({top:0, behavior:'smooth'}); return;
   }
-  if((locationType === 'Delivery' || locationType === 'Room Number') && !locationDetail){
-    document.getElementById('submitError').textContent = locationType === 'Delivery' ? 'Please add a delivery address above the menu.' : 'Please add the room number above the menu.';
+  // v1.4: "Delivery" removed from ORDER_LOCATION_TYPES, so only Room
+  // Number still requires a detail field.
+  if(locationType === 'Room Number' && !locationDetail){
+    document.getElementById('submitError').textContent = 'Please add the room number above the menu.';
     closeCartModal(); window.scrollTo({top:0, behavior:'smooth'}); return;
   }
   const custName = document.getElementById('custName').value.trim();
@@ -507,11 +516,6 @@ async function resumePendingOrder(){
     }
   }
   showQueuedScreen();
-  // v5.2: back off instead of retrying every 5s flat — if the system
-  // is genuinely overloaded (not just this one phone's wifi), a
-  // tight fixed retry from every waiting customer's phone makes that
-  // worse, not better. Capped at 30s so a real reconnect is still
-  // picked up reasonably quickly.
   resumeAttempts = Math.min(resumeAttempts + 1, 6);
   const delay = Math.min(30000, 3000 * Math.pow(2, resumeAttempts)) * (0.6 + Math.random() * 0.4);
   setTimeout(resumePendingOrder, delay);
