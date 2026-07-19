@@ -1,7 +1,26 @@
 <!DOCTYPE html>
 <html lang="en">
 <!--
-  THE WHITE HOUSE GH — TABLE ORDER PAGE (v3.0, paired with Code.gs v5.3)
+  THE WHITE HOUSE EVENTS & MORE — TABLE ORDER PAGE (v3.1, paired with Code.gs v5.7)
+
+  v3.1 CHANGES:
+  - REBRAND: "The White House GH" -> "The White House Events & More".
+  - LOCATION TYPES: "Delivery" replaced with "Terrace Area" (matches
+    Code.gs v5.6's ORDER_LOCATION_TYPES) — Terrace Area needs no
+    detail field, same as Bar Area/VIP Area/Pool/Stage Area, so the
+    old Delivery-specific address prompt is gone. "Stage 2 Area"
+    added the same way.
+  - GROUP FILTER (ALL / BAR / CANTEEN / COCKTAILS): a new row of tabs
+    above the existing category tabs (Beer, Cocktail, Pizza, etc.).
+    Every menu item already carries a `source` field ('bar' or
+    'food') from the backend's buildCombinedMenu_, so BAR/CANTEEN
+    split on that; COCKTAILS pulls out the same cocktail-family
+    categories Code.gs treats specially (Cocktail, Mocktail,
+    Milkshake, Smoothie, Juice, VIP Special) regardless of source.
+    Defaults to BAR on page load, per request. The category tabs
+    underneath now only show categories present within the selected
+    group, so it's a two-level filter (group, then category).
+  - iOS ZOOM FIX: .search-input font-size raised from 14px to 16px.
 
   v3.0 — two bug fixes:
   1. Food ordered from this page (which shows drinks AND food
@@ -15,12 +34,11 @@
   retrying every 5 seconds flat — see canteen-order.html for why.
 
   v2.0: now shares the same location picker as canteen-order.html —
-  Table (1-50), Pickup, Delivery, Room Number, Bar Area, VIP Area,
-  Pool, Stage Area — instead of only a table number. Name and
-  phone/membership number are both required on every order now, so
-  staff always know whose order it is, at any location, and so a
-  first-time customer gets registered as a member correctly when the
-  order is marked Paid.
+  Table (1-50), Pickup, Room Number, Bar Area, VIP Area, Pool, Stage
+  Area — instead of only a table number. Name and phone/membership
+  number are both required on every order now, so staff always know
+  whose order it is, at any location, and so a first-time customer
+  gets registered as a member correctly when the order is marked Paid.
 
   BACKWARD COMPATIBILITY: your existing printed table QR codes
   (encoding ?table=12 etc.) keep working — this page detects that old
@@ -46,7 +64,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>The White House GH — Order</title>
+<title>The White House Events & More — Order</title>
 <link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Syne:wght@400;600;700;800&display=swap" rel="stylesheet">
 <style>
 :root{--black:#0a0a0a;--surface:#111111;--card:#181818;--border:#2a2a2a;--gold:#f5a623;--gold-dim:#c9861a;--teal:#3fb6a8;--red:#ef4444;--green:#22c55e;--text:#f2f2f2;--text-dim:#b5b5b5;--muted:#888;}
@@ -62,11 +80,19 @@ body{background:var(--black);color:var(--text);font-family:'Syne',sans-serif;min
 .loc-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:6px;}
 .loc-option{background:var(--card);border:2px solid var(--border);border-radius:10px;padding:12px 10px;text-align:center;cursor:pointer;font-size:13px;font-weight:700;}
 .loc-option.selected{border-color:var(--gold);background:#1e1706;color:var(--gold);}
-.search-input{background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:12px 14px;color:var(--text);font-size:14px;width:100%;margin-bottom:12px;outline:none;font-family:'Syne',sans-serif;}
+/* v3.1: font-size raised from 14px to 16px to fix the iOS pinch-zoom bug. */
+.search-input{background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:12px 14px;color:var(--text);font-size:16px;width:100%;margin-bottom:12px;outline:none;font-family:'Syne',sans-serif;}
 .search-input:focus{border-color:var(--gold);}
 .btn{background:var(--gold);color:var(--black);border:none;padding:14px;border-radius:8px;font-size:14px;font-weight:800;width:100%;cursor:pointer;font-family:'Syne',sans-serif;margin-top:8px;}
 .btn:disabled{opacity:0.5;}
 .btn.secondary{background:var(--border);color:var(--text);}
+
+/* v3.1: group filter row (ALL/BAR/CANTEEN/COCKTAILS) — visually a
+   step bolder than the category tabs underneath it, since it's the
+   primary filter and the category tabs are the secondary one. */
+.group-tab-row{display:flex;gap:8px;margin-bottom:10px;}
+.group-tab-pill{flex:1;background:var(--card);border:2px solid var(--border);color:var(--text-dim);padding:10px 6px;border-radius:10px;font-size:12px;font-weight:800;letter-spacing:0.5px;cursor:pointer;font-family:'Syne',sans-serif;text-align:center;}
+.group-tab-pill.active{background:#1e1706;border-color:var(--gold);color:var(--gold);}
 
 .tab-row{display:flex;gap:6px;overflow-x:auto;padding-bottom:4px;margin-bottom:12px;}
 .tab-pill{flex-shrink:0;background:var(--surface);border:1px solid var(--border);color:var(--text-dim);padding:7px 14px;border-radius:20px;font-size:11px;font-weight:700;cursor:pointer;font-family:'Syne',sans-serif;}
@@ -119,7 +145,7 @@ body{background:var(--black);color:var(--text);font-family:'Syne',sans-serif;min
 <body>
 
 <div class="header">
-  <div class="logo">THE WHITE HOUSE GH</div>
+  <div class="logo">THE WHITE HOUSE EVENTS & MORE</div>
   <div class="loc-pill" id="locPill">Table Order</div>
 </div>
 
@@ -136,6 +162,7 @@ body{background:var(--black);color:var(--text);font-family:'Syne',sans-serif;min
 
   <div id="menuArea">
     <div style="font-size:11px;color:var(--muted);margin-bottom:8px">TODAY'S MENU — some items may only be available on certain days</div>
+    <div class="group-tab-row" id="groupTabs"></div>
     <div class="tab-row" id="menuTabs"></div>
     <input class="search-input" id="menuSearch" placeholder="Search drinks + food menu..." oninput="renderMenu()">
     <div class="menu-grid" id="menuGrid"><div class="loading">Loading menu…</div></div>
@@ -195,6 +222,21 @@ let cart = {};
 let activeCategory = 'All';
 let selectedPayment = null;
 
+// v3.1: group filter — mirrors COCKTAIL_CATEGORIES in Code.gs. If you
+// add/rename a cocktail-family category there, update it here too.
+const COCKTAIL_CATEGORIES = ['Cocktail', 'Mocktail', 'Milkshake', 'Smoothie', 'Juice', 'VIP Special'];
+let activeGroup = 'BAR'; // ALL | BAR | CANTEEN | COCKTAILS — starts on BAR per request
+
+function itemGroup(m){
+  if(COCKTAIL_CATEGORIES.indexOf(m.category) !== -1) return 'COCKTAILS';
+  if(m.source === 'food') return 'CANTEEN';
+  return 'BAR';
+}
+function groupFilteredMenu(){
+  if(activeGroup === 'ALL') return menu;
+  return menu.filter(m => itemGroup(m) === activeGroup);
+}
+
 const PENDING_KEY = 'whgh_table_order_pending_v1';
 
 function genClientId(){
@@ -234,8 +276,9 @@ async function loadFoodMenu(afterLoad){
     menu = data.menu || [];
     momoNumber = data.momoNumber || '';
     momoName = data.momoName || '';
-    locationTypes = data.locationTypes || ['Table','Pickup','Delivery','Room Number','Bar Area','VIP Area','Pool','Stage Area'];
+    locationTypes = data.locationTypes || ['Table','Pickup','Terrace Area','Room Number','Bar Area','VIP Area','Pool','Stage Area','Stage 2 Area'];
     renderLocationOptions();
+    renderGroupTabs();
     renderTabs();
     renderMenu();
     if(afterLoad) afterLoad();
@@ -287,22 +330,45 @@ function selectLocation(loc, skipDetailReset){
     detailInput.placeholder = 'e.g. 204';
     detailInput.value = locationDetail;
     detailInput.oninput = () => { locationDetail = detailInput.value.trim(); };
-  }else if(loc === 'Delivery'){
-    detailBox.style.display = 'block';
-    detailLabel.textContent = 'Delivery Address / Description';
-    detailSelect.style.display = 'none';
-    detailInput.style.display = 'block';
-    detailInput.placeholder = 'e.g. 12 Ridge Avenue, near the junction';
-    detailInput.value = locationDetail;
-    detailInput.oninput = () => { locationDetail = detailInput.value.trim(); };
   }else{
+    // v3.1: "Delivery" is gone — Terrace Area, Stage 2 Area, Bar
+    // Area, VIP Area, Pool, and Stage Area are all just a spot on the
+    // property, no extra detail needed.
     detailBox.style.display = 'none';
   }
 }
 
+// v3.1: group tabs (ALL/BAR/CANTEEN/COCKTAILS) sit above the existing
+// category tabs and filter the menu first; the category tabs below
+// then only show categories present within the selected group.
+function renderGroupTabs(){
+  const groups = [
+    { key: 'ALL', label: 'ALL' },
+    { key: 'BAR', label: 'BAR' },
+    { key: 'CANTEEN', label: 'CANTEEN' },
+    { key: 'COCKTAILS', label: 'COCKTAILS' }
+  ];
+  const row = document.getElementById('groupTabs');
+  row.innerHTML = '';
+  groups.forEach(g => {
+    const btn = document.createElement('button');
+    btn.className = 'group-tab-pill' + (activeGroup===g.key?' active':'');
+    btn.textContent = g.label;
+    btn.onclick = () => {
+      activeGroup = g.key;
+      activeCategory = 'All';
+      renderGroupTabs();
+      renderTabs();
+      renderMenu();
+    };
+    row.appendChild(btn);
+  });
+}
+
 function renderTabs(){
+  const groupMenu = groupFilteredMenu();
   const counts = {};
-  menu.forEach(m => { const c = m.category || 'Other'; counts[c] = (counts[c]||0)+1; });
+  groupMenu.forEach(m => { const c = m.category || 'Other'; counts[c] = (counts[c]||0)+1; });
   const cats = Object.keys(counts).sort((a,b)=>counts[b]-counts[a]);
   if(!cats.includes(activeCategory) && activeCategory !== 'All') activeCategory = 'All';
   const tabs = [{key:'All', label:'All'}, ...cats.map(c=>({key:c, label:c}))];
@@ -319,7 +385,7 @@ function renderTabs(){
 
 function renderMenu(){
   const q = (document.getElementById('menuSearch').value||'').toLowerCase();
-  let items = menu;
+  let items = groupFilteredMenu();
   if(activeCategory !== 'All') items = items.filter(m => (m.category||'Other') === activeCategory);
   if(q) items = items.filter(m => m.item.toLowerCase().includes(q));
   const grid = document.getElementById('menuGrid');
@@ -432,8 +498,10 @@ async function submitOrder(){
     document.getElementById('submitError').textContent = 'Please choose a table number above the menu.';
     closeCartModal(); window.scrollTo({top:0, behavior:'smooth'}); return;
   }
-  if((locationType === 'Delivery' || locationType === 'Room Number') && !locationDetail){
-    document.getElementById('submitError').textContent = locationType === 'Delivery' ? 'Please add a delivery address above the menu.' : 'Please add the room number above the menu.';
+  // v3.1: "Delivery" removed from ORDER_LOCATION_TYPES, so only Room
+  // Number still requires a detail field.
+  if(locationType === 'Room Number' && !locationDetail){
+    document.getElementById('submitError').textContent = 'Please add the room number above the menu.';
     closeCartModal(); window.scrollTo({top:0, behavior:'smooth'}); return;
   }
   const custName = document.getElementById('custName').value.trim();
@@ -473,9 +541,6 @@ async function submitOrder(){
   const queued = outcomes.filter(o => o.result.queued);
   const succeeded = outcomes.filter(o => o.result.ok);
 
-  // Remove handled items (sent or safely queued) from the cart; if part
-  // of the order hard-failed, leave just that part so it can be retried
-  // without resubmitting the part that already went through.
   succeeded.concat(queued).forEach(o => o.names.forEach(n => delete cart[n]));
   updateCartBar();
   queued.forEach(o => savePendingOrder(o.payload));
@@ -543,8 +608,6 @@ async function resumePendingOrder(){
     }
   }
   showQueuedScreen();
-  // v5.2: back off instead of retrying every 5s flat — see
-  // canteen-order.html for the full rationale.
   resumeAttempts = Math.min(resumeAttempts + 1, 6);
   const delay = Math.min(30000, 3000 * Math.pow(2, resumeAttempts)) * (0.6 + Math.random() * 0.4);
   setTimeout(resumePendingOrder, delay);
