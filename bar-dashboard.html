@@ -331,7 +331,18 @@ tr.low-row{background:#1a0a0a;}
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jsQR/1.4.0/jsQR.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script>
+// SUPABASE MIGRATION: Table Orders read/write now goes straight to
+// Postgres (see mark_location_order_paid / set_location_order_status
+// functions — these replace updateOrderStatus_ and include the same
+// stock decrement + cocktail sales + loyalty points logic that used to
+// run in Apps Script). Everything else on this dashboard (Quick Sell,
+// stock, staff, customers) is still on the Apps Script API_URL below.
+const SUPABASE_URL = 'https://crvuzkyfrqbfmamegxjx.supabase.co';
+const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNydnV6a3lmcnFiZm1hbWVneGp4Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODQ0MzI5NjQsImV4cCI6MjEwMDAwODk2NH0.gMsv3yvw6plDCherA2YdU4UgWRMXUc9H1Hr_IdR9GxA';
+const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
 const API_URL = 'https://script.google.com/macros/s/AKfycbyycYKCEtRchk0eToXIlMLgs3RmWIsKuUppD3UprPO8zLi9N5a9PIgn9uN4IKeip24E/exec';
 
 // v5.7: bumped to match BarSystem_Code.gs v5.7 (Search & Sell sheet's
@@ -1202,18 +1213,33 @@ function playOrderBeep(){
   }catch(e){ }
 }
 
+function shapeSupabaseOrderRow(r){
+  return {
+    orderId: r.order_id, locationType: r.location_type, locationDetail: r.location_detail || '',
+    items: r.items_json || [], total: parseFloat(r.total_ghs) || 0, payment: r.payment_method,
+    status: r.status, momoRef: r.momo_reference || '', customerName: r.customer_name,
+    phone: r.customer_phone, handledBy: r.handled_by || '', timestamp: r.created_at
+  };
+}
+
 async function loadTableOrders(){
   try{
-    const res = await fetch(API_URL + '?action=getTableOrders&t=' + Date.now());
-    if(!res.ok) throw new Error('status ' + res.status);
-    const data = await res.json();
-    if(!data.success) throw new Error(data.error || 'Failed to load table orders');
-    tableOrdersData = data;
+    const { data, error } = await supabaseClient
+      .from('table_orders')
+      .select('*')
+      .order('created_at', { ascending: false })
+      .limit(200);
+    if(error) throw new Error(error.message);
 
-    const currentIds = new Set(data.active.map(o=>o.orderId));
+    const shaped = data.map(shapeSupabaseOrderRow);
+    const active = shaped.filter(o => o.status !== 'Paid' && o.status !== 'Cancelled');
+    const recentFinal = shaped.filter(o => o.status === 'Paid' || o.status === 'Cancelled').slice(0, 15);
+    tableOrdersData = { success: true, active: active, recentFinal: recentFinal };
+
+    const currentIds = new Set(active.map(o=>o.orderId));
     let hasNewPlaced = false;
     if(!tableOrdersFirstLoad){
-      data.active.forEach(o => {
+      active.forEach(o => {
         if(o.status === 'Placed' && !seenActiveOrderIds.has(o.orderId)) hasNewPlaced = true;
       });
     }
@@ -1221,8 +1247,6 @@ async function loadTableOrders(){
     seenActiveOrderIds = currentIds;
     tableOrdersFirstLoad = false;
 
-    // clean up staff selections / processing flags for orders that are
-    // no longer active (paid/cancelled/gone)
     Object.keys(orderStaffSelections).forEach(id => { if(!currentIds.has(id)) delete orderStaffSelections[id]; });
     Array.from(processingOrderIds).forEach(id => { if(!currentIds.has(id)) processingOrderIds.delete(id); });
 
@@ -1358,17 +1382,35 @@ async function tableOrderAction(orderId, newStatus){
   lastActiveSignature = null;
   renderTableOrders();
 
-  let url = API_URL + '?action=updateTableOrderStatus&orderId=' + encodeURIComponent(orderId) + '&newStatus=' + encodeURIComponent(newStatus) + '&staffInitials=' + encodeURIComponent(staffInitials);
-  if(momoReference) url += '&momoReference=' + encodeURIComponent(momoReference);
-  url += '&t=' + Date.now();
-
-  const clientId = genClientId();
-  const label = `Order ${orderId} -> ${newStatus}`;
-  const result = await fetchOrQueue(url, 'tableOrder', label, clientId);
+  // SUPABASE MIGRATION: this now calls a Postgres function instead of
+  // Apps Script. mark_location_order_paid does the same stock-decrement
+  // + cocktail-sales + loyalty-points work updateOrderStatus_ used to do
+  // server-side, atomically, and is safe to retry (duplicate taps are a
+  // no-op — see already_final in the function). No offline queue here:
+  // if there's no connection, the RPC call just fails and the button
+  // re-enables, same as before, staff just tries again once back online.
+  let result;
+  try{
+    let rpcResult;
+    if(newStatus === 'Paid'){
+      rpcResult = await supabaseClient.rpc('mark_location_order_paid', {
+        p_table: 'table_orders', p_order_id: orderId, p_staff: staffInitials, p_momo: momoReference || null
+      });
+    }else{
+      rpcResult = await supabaseClient.rpc('set_location_order_status', {
+        p_table: 'table_orders', p_order_id: orderId, p_new_status: newStatus, p_staff: staffInitials,
+        p_reason: null
+      });
+    }
+    if(rpcResult.error) throw new Error(rpcResult.error.message);
+    result = { ok: true };
+  }catch(e){
+    result = { ok: false, error: e.message };
+  }
 
   processingOrderIds.delete(orderId);
 
-  if(result.ok || result.queued){
+  if(result.ok){
     if(newStatus === 'Paid' || newStatus === 'Cancelled') delete orderStaffSelections[orderId];
     lastActiveSignature = null;
     loadTableOrders();
