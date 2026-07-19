@@ -1,7 +1,21 @@
 <!DOCTYPE html>
 <html lang="en">
 <!--
-  THE WHITE HOUSE GH — CANTEEN DASHBOARD (v1.1, paired with Code.gs v5.3)
+  THE WHITE HOUSE EVENTS & MORE — CANTEEN DASHBOARD (v1.2, paired with Code.gs v5.7)
+
+  v1.2 CHANGES:
+  - REBRAND: "The White House GH" -> "The White House Events & More".
+  - PER-ORDER STAFF: the single header "acting as" dropdown is gone —
+    each incoming order card now has its own staff select, same fix
+    as bar-dashboard.html v5.6.
+  - ORDER LOCK-ON-CLICK: tapping an action on an order card instantly
+    disables/dims that card until the server responds.
+  - QUICK SELL PAYMENT: now required (was optional), and trimmed down
+    to Cash/MoMo only (was Cash/Mobile Money/Card/Room Charge).
+  - iOS ZOOM FIX: input/select font-size raised from 13px to 16px
+    (order-momo-input from 12px to 16px) — see bar-dashboard.html for
+    the full explanation of why this was causing the pinch-zoom bug.
+  - EXPECTED_BACKEND_VERSION bumped to '5.7' to match Code.gs.
 
   v1.1: Quick Sell menu taps sometimes needed 2-4 attempts to
   register — fixed by no longer rebuilding the entire grid on every
@@ -27,7 +41,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>The White House GH — Canteen Dashboard</title>
+<title>The White House Events & More — Canteen Dashboard</title>
 <link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Syne:wght@400;600;700;800&display=swap" rel="stylesheet">
 <style>
 :root{--black:#0a0a0a;--surface:#111111;--card:#181818;--border:#2a2a2a;--gold:#f5a623;--gold-dim:#c9861a;--teal:#3fb6a8;--red:#ef4444;--green:#22c55e;--purple:#8b5cf6;--text:#f2f2f2;--text-dim:#b5b5b5;--muted:#888;}
@@ -61,7 +75,9 @@ body{background:var(--black);color:var(--text);font-family:'Syne',sans-serif;min
 table{width:100%;border-collapse:collapse;font-size:12px;}
 th{text-align:left;padding:8px 10px;color:var(--muted);font-weight:700;letter-spacing:1px;border-bottom:1px solid var(--border);font-size:10px;}
 td{padding:7px 10px;border-bottom:1px solid #1a1a1a;}
-.search-input,.select-input{background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:10px 14px;color:var(--text);font-size:13px;font-family:'Syne',sans-serif;width:100%;margin-bottom:10px;outline:none;}
+/* v1.2: font-size raised from 13px to 16px — see bar-dashboard.html
+   for why this fixes the iOS pinch-zoom bug. */
+.search-input,.select-input{background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:10px 14px;color:var(--text);font-size:16px;font-family:'Syne',sans-serif;width:100%;margin-bottom:10px;outline:none;}
 .search-input:focus,.select-input:focus{border-color:var(--gold);}
 .select-input{appearance:auto;}
 .btn{background:var(--gold);color:var(--black);border:none;padding:10px 18px;border-radius:5px;cursor:pointer;font-size:12px;font-weight:800;letter-spacing:1px;font-family:'Syne',sans-serif;width:100%;}
@@ -121,11 +137,13 @@ td{padding:7px 10px;border-bottom:1px solid #1a1a1a;}
 .cart-subtotal-row .cart-subtotal-value{color:var(--gold);font-family:'Space Mono',monospace;font-size:18px;}
 
 /* Incoming Canteen Orders */
-.order-card{background:var(--surface);border:1px solid var(--border);border-left:4px solid var(--gold);border-radius:8px;padding:14px 16px;margin-bottom:10px;}
+.order-card{background:var(--surface);border:1px solid var(--border);border-left:4px solid var(--gold);border-radius:8px;padding:14px 16px;margin-bottom:10px;transition:opacity .15s;}
 .order-card.status-placed{border-left-color:var(--gold);}
 .order-card.status-placed.is-new{animation:orderFlash 1.4s ease-in-out 3;}
 .order-card.status-preparing{border-left-color:var(--teal);}
 .order-card.status-delivered{border-left-color:#c9861a;}
+/* v1.2: order lock-on-click, same pattern as bar-dashboard.html */
+.order-card.is-processing{opacity:0.5;}
 @keyframes orderFlash{0%,100%{background:var(--surface);}50%{background:#3a2a06;}}
 .order-card-top{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:8px;}
 .order-card-loc{font-weight:800;font-size:14px;}
@@ -139,11 +157,14 @@ td{padding:7px 10px;border-bottom:1px solid #1a1a1a;}
 .order-card-footer{display:flex;justify-content:space-between;align-items:center;gap:10px;}
 .order-total{font-family:'Space Mono',monospace;font-weight:800;color:var(--gold);}
 .order-pay-badge{font-size:10px;color:var(--muted);font-family:'Space Mono',monospace;}
+/* v1.2: per-order staff select — replaces the single global "acting
+   as" dropdown that used to sit in the card header. */
+.order-staff-select{background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:8px 10px;color:var(--text);font-size:16px;font-family:'Syne',sans-serif;width:100%;margin-top:8px;margin-bottom:2px;}
 .order-actions{display:flex;gap:6px;flex-wrap:wrap;margin-top:10px;}
 .order-actions button{flex:1;min-width:110px;padding:8px 10px;font-size:11px;border-radius:6px;border:none;font-weight:800;cursor:pointer;font-family:'Syne',sans-serif;}
 .oa-primary{background:var(--gold);color:var(--black);}
 .oa-cancel{background:transparent;border:1px solid var(--red)!important;color:var(--red);}
-.order-momo-input{background:var(--card);border:1px solid var(--teal);border-radius:6px;padding:8px 10px;font-size:12px;color:var(--text);width:100%;margin-bottom:6px;font-family:'Syne',sans-serif;}
+.order-momo-input{background:var(--card);border:1px solid var(--teal);border-radius:6px;padding:8px 10px;font-size:16px;color:var(--text);width:100%;margin-bottom:6px;font-family:'Syne',sans-serif;}
 .food-menu-list{max-height:360px;overflow-y:auto;}
 .rank-row{display:flex;align-items:center;gap:12px;padding:9px 4px;border-bottom:1px solid #1a1a1a;}
 .rank-row:last-child{border-bottom:none;}
@@ -156,8 +177,8 @@ td{padding:7px 10px;border-bottom:1px solid #1a1a1a;}
 <body>
 <div class="header">
   <div class="brand">
-    <img src="logo.jpg" alt="The White House GH" class="brand-logo" onerror="this.style.display='none'">
-    <div class="logo">THE WHITE HOUSE GH <span>CANTEEN DASHBOARD</span></div>
+    <img src="logo.jpg" alt="The White House Events & More" class="brand-logo" onerror="this.style.display='none'">
+    <div class="logo">THE WHITE HOUSE EVENTS & MORE <span>CANTEEN DASHBOARD</span></div>
   </div>
   <div class="header-right"><span class="conn-status" id="connStatus">&#9679; checking...</span><span class="last-refresh" id="lastRefresh">Loading...</span><button class="refresh-btn" onclick="loadAll()">&#8635; REFRESH</button></div>
 </div>
@@ -168,9 +189,7 @@ td{padding:7px 10px;border-bottom:1px solid #1a1a1a;}
   <div class="pending-banner" id="pendingBanner"></div>
 
   <div class="card" id="canteenOrdersCard">
-    <div class="card-title">&#127859; INCOMING CANTEEN ORDERS <span style="font-weight:400;color:var(--muted);text-transform:none;letter-spacing:0">(from canteen-order.html — acting as:)</span>
-      <select class="select-input" id="canteenStaffSelect" style="width:auto;display:inline-block;margin-left:8px;padding:4px 10px;font-size:11px"></select>
-    </div>
+    <div class="card-title">&#127859; INCOMING CANTEEN ORDERS <span style="font-weight:400;color:var(--muted);text-transform:none;letter-spacing:0">(from canteen-order.html — pick staff on each order card below)</span></div>
     <div id="canteenOrdersBody"><div class="empty">Loading canteen orders...</div></div>
   </div>
 
@@ -200,10 +219,9 @@ td{padding:7px 10px;border-bottom:1px solid #1a1a1a;}
 // Same deployment/exec URL as bar-dashboard.html and members-dashboard.html.
 const API_URL = 'https://script.google.com/macros/s/AKfycbyycYKCEtRchk0eToXIlMLgs3RmWIsKuUppD3UprPO8zLi9N5a9PIgn9uN4IKeip24E/exec';
 
-// The version this canteen-dashboard.html was built to work with. If
-// the backend reports anything else, your Code.gs edits are not live
-// yet — see renderVersionBanner() below.
-const EXPECTED_BACKEND_VERSION = '5.4';
+// v1.2: bumped to match BarSystem_Code.gs v5.7 (payment methods
+// trimmed to Cash/MoMo only). MUST match BACKEND_VERSION in Code.gs.
+const EXPECTED_BACKEND_VERSION = '5.7';
 
 let foodMenu = [];
 let staffList = [];
@@ -350,7 +368,6 @@ async function loadAll(){
     renderVersionBanner(barData.backendVersion || null);
     clearApiError();
 
-    populateStaffSelect();
     renderQuickSellTabs();
     renderQuickSellMenu();
     renderQuickSellPanel();
@@ -364,14 +381,6 @@ async function loadAll(){
   loadCanteenOrders();
 }
 
-function populateStaffSelect(){
-  const sel = document.getElementById('canteenStaffSelect');
-  const current = sel.value;
-  sel.innerHTML = '<option value="">Select staff...</option>' +
-    staffList.map(s => `<option value="${s.initials}">${s.initials}${s.name?' — '+s.name:''}</option>`).join('');
-  if(staffList.some(s=>s.initials===current)) sel.value = current;
-}
-
 // =====================
 // INCOMING CANTEEN ORDERS
 // =====================
@@ -379,6 +388,12 @@ let canteenOrdersData = { active: [], recentFinal: [] };
 let seenActiveOrderIds = new Set();
 let canteenOrdersFirstLoad = true;
 let lastActiveSignature = null;
+
+// v1.2: per-order staff assignment and the set of orders currently
+// mid-request (order lock-on-click) — same pattern as
+// bar-dashboard.html v5.6.
+let orderStaffSelections = {};
+let processingOrderIds = new Set();
 
 function playOrderBeep(){
   try{
@@ -393,13 +408,12 @@ function playOrderBeep(){
 }
 
 // v5.4: a signature of everything that actually affects what's on
-// screen (NOT the timestamp — see updateOrderAges below). If this is
-// identical to last time, renderCanteenOrders skips rebuilding the
-// DOM entirely. Polling every 8-12s used to rebuild the whole card
-// list even when nothing had changed, which is exactly the kind of
-// rebuild-under-a-tap that causes a button to need 2-4 presses.
+// screen (NOT the timestamp — see updateOrderAges below), PLUS the
+// processing state (v1.2) so a lock-on-click always forces a
+// re-render even if nothing else about the order changed.
 function activeOrdersSignature(active){
-  return JSON.stringify((active||[]).map(o => [o.orderId, o.status, o.total, o.payment, o.locationType, o.locationDetail, o.customerName, JSON.stringify(o.items)]));
+  return JSON.stringify((active||[]).map(o => [o.orderId, o.status, o.total, o.payment, o.locationType, o.locationDetail, o.customerName, JSON.stringify(o.items)]))
+    + '|proc:' + Array.from(processingOrderIds).sort().join(',');
 }
 
 async function loadCanteenOrders(){
@@ -418,6 +432,9 @@ async function loadCanteenOrders(){
     if(hasNewPlaced) playOrderBeep();
     seenActiveOrderIds = currentIds;
     canteenOrdersFirstLoad = false;
+
+    Object.keys(orderStaffSelections).forEach(id => { if(!currentIds.has(id)) delete orderStaffSelections[id]; });
+    Array.from(processingOrderIds).forEach(id => { if(!currentIds.has(id)) processingOrderIds.delete(id); });
 
     renderCanteenOrders();
     renderMetrics();
@@ -470,25 +487,35 @@ function renderCanteenOrders(){
 
   if(active.length === 0){ el.innerHTML = '<div class="empty">No active canteen orders right now.</div>'; return; }
 
+  const staffOptionsHtml = (selected) => '<option value="">Select staff...</option>' +
+    staffList.map(s => `<option value="${s.initials}" ${selected===s.initials?'selected':''}>${s.initials}${s.name?' — '+s.name:''}</option>`).join('');
+
   el.innerHTML = active.map(o => {
     const itemsHtml = (o.items||[]).map(i => `${i.qty} &times; ${i.item}`).join(', ');
     const isNew = o.status === 'Placed' && !canteenOrdersFirstLoad;
-    let actionsHtml = '';
-    if(o.status === 'Placed'){
-      actionsHtml = `<button class="oa-primary" onclick="canteenOrderAction('${o.orderId}','Preparing')">START PREPARING</button>`;
-    }else if(o.status === 'Preparing'){
-      actionsHtml = `<button class="oa-primary" onclick="canteenOrderAction('${o.orderId}','Delivered - Awaiting Payment')">MARK DELIVERED / READY</button>`;
-    }else if(o.status === 'Delivered - Awaiting Payment'){
-      if(o.payment === 'MoMo'){
-        actionsHtml = `<input class="order-momo-input" id="momoRef_${o.orderId}" placeholder="MoMo reference / note (optional)">
-          <button class="oa-primary" onclick="canteenOrderAction('${o.orderId}','Paid')">&#10003; CONFIRM MOMO RECEIVED</button>`;
-      }else{
-        actionsHtml = `<button class="oa-primary" onclick="canteenOrderAction('${o.orderId}','Paid')">&#10003; CONFIRM CASH RECEIVED</button>`;
-      }
-    }
-    actionsHtml += `<button class="oa-cancel" onclick="canteenOrderAction('${o.orderId}','Cancelled')">CANCEL</button>`;
+    const isProcessing = processingOrderIds.has(o.orderId);
+    const selectedStaff = orderStaffSelections[o.orderId] || '';
 
-    return `<div class="order-card ${statusClass(o.status)}${isNew && o.status==='Placed' ? ' is-new':''}" data-timestamp="${o.timestamp}">
+    let actionsHtml = '';
+    if(isProcessing){
+      actionsHtml = `<button class="oa-primary" disabled>PROCESSING...</button>`;
+    }else{
+      if(o.status === 'Placed'){
+        actionsHtml = `<button class="oa-primary" onclick="canteenOrderAction('${o.orderId}','Preparing')">START PREPARING</button>`;
+      }else if(o.status === 'Preparing'){
+        actionsHtml = `<button class="oa-primary" onclick="canteenOrderAction('${o.orderId}','Delivered - Awaiting Payment')">MARK DELIVERED / READY</button>`;
+      }else if(o.status === 'Delivered - Awaiting Payment'){
+        if(o.payment === 'MoMo'){
+          actionsHtml = `<input class="order-momo-input" id="momoRef_${o.orderId}" placeholder="MoMo reference / note (optional)">
+            <button class="oa-primary" onclick="canteenOrderAction('${o.orderId}','Paid')">&#10003; CONFIRM MOMO RECEIVED</button>`;
+        }else{
+          actionsHtml = `<button class="oa-primary" onclick="canteenOrderAction('${o.orderId}','Paid')">&#10003; CONFIRM CASH RECEIVED</button>`;
+        }
+      }
+      actionsHtml += `<button class="oa-cancel" onclick="canteenOrderAction('${o.orderId}','Cancelled')">CANCEL</button>`;
+    }
+
+    return `<div class="order-card ${statusClass(o.status)}${isNew && o.status==='Placed' ? ' is-new':''}${isProcessing?' is-processing':''}" data-timestamp="${o.timestamp}">
       <div class="order-card-top">
         <div><span class="order-card-loc">${locationLabel(o)}</span> &nbsp; <span class="order-status-pill ${statusPillClass(o.status)}">${o.status}</span></div>
         <div class="order-card-age">${orderAge(o.timestamp)}</div>
@@ -499,14 +526,15 @@ function renderCanteenOrders(){
         <span class="order-total">GHS ${o.total.toFixed(2)}</span>
         <span class="order-pay-badge">${o.payment}</span>
       </div>
+      <div class="qs-label" style="margin-top:10px">Staff handling this order (required)</div>
+      <select class="order-staff-select" id="staffSel_${o.orderId}" ${isProcessing?'disabled':''} onchange="orderStaffSelections['${o.orderId}']=this.value">
+        ${staffOptionsHtml(selectedStaff)}
+      </select>
       <div class="order-actions">${actionsHtml}</div>
     </div>`;
   }).join('');
 }
 
-// v5.4: updates just the "X min ago" text on existing cards, without
-// touching anything else in the DOM — keeps that text fresh even on
-// polls where renderCanteenOrders skipped a full rebuild.
 function updateOrderAges(){
   document.querySelectorAll('#canteenOrdersBody .order-card').forEach(card => {
     const ts = card.dataset.timestamp;
@@ -516,14 +544,20 @@ function updateOrderAges(){
 }
 
 async function canteenOrderAction(orderId, newStatus){
-  const staffSel = document.getElementById('canteenStaffSelect');
-  const staffInitials = staffSel ? staffSel.value : '';
-  if(!staffInitials){ alert('Select which staff member is acting first (top of the Incoming Canteen Orders card).'); return; }
+  // v1.2: order lock-on-click.
+  if(processingOrderIds.has(orderId)) return;
+
+  const staffInitials = orderStaffSelections[orderId] || '';
+  if(!staffInitials){ alert('Select which staff member is handling this order first (dropdown on the order card).'); return; }
   if(newStatus === 'Cancelled' && !confirm('Cancel this order? This cannot be undone.')) return;
 
   let momoReference = '';
   const momoInput = document.getElementById('momoRef_' + orderId);
   if(momoInput) momoReference = momoInput.value.trim();
+
+  processingOrderIds.add(orderId);
+  lastActiveSignature = null;
+  renderCanteenOrders();
 
   let url = API_URL + '?action=updateCanteenOrderStatus&orderId=' + encodeURIComponent(orderId) + '&newStatus=' + encodeURIComponent(newStatus) + '&staffInitials=' + encodeURIComponent(staffInitials);
   if(momoReference) url += '&momoReference=' + encodeURIComponent(momoReference);
@@ -533,9 +567,15 @@ async function canteenOrderAction(orderId, newStatus){
   const label = `Canteen order ${orderId} -> ${newStatus}`;
   const result = await fetchOrQueue(url, 'canteenOrder', label, clientId);
 
+  processingOrderIds.delete(orderId);
+
   if(result.ok || result.queued){
+    if(newStatus === 'Paid' || newStatus === 'Cancelled') delete orderStaffSelections[orderId];
+    lastActiveSignature = null;
     loadCanteenOrders();
   }else{
+    lastActiveSignature = null;
+    renderCanteenOrders();
     alert('Could not update order: ' + result.error);
   }
 }
@@ -732,10 +772,10 @@ function renderQuickSellPanel(){
         <select class="select-input" id="qsStaff" style="margin:0"></select>
       </div>
       <div>
-        <div class="qs-label">Payment method (optional)</div>
-        <select class="select-input" id="qsPayment">
+        <div class="qs-label">Payment method (required)</div>
+        <select class="select-input" id="qsPayment" style="margin:0">
           <option value="">Select payment...</option>
-          <option>Cash</option><option>Mobile Money</option><option>Card</option><option>Room Charge</option>
+          <option>Cash</option><option>MoMo</option>
         </select>
       </div>
     </div>
@@ -788,6 +828,9 @@ async function submitQuickSellCart(){
     return;
   }
   if(!staffInitials){ resultEl.innerHTML = '<span style="color:var(--red)">Pick who is serving.</span>'; return; }
+  // v1.2: payment method is now mandatory on Quick Sell, matching the
+  // rule enforced server-side in processSale_ (Code.gs v5.6+).
+  if(!payment){ resultEl.innerHTML = '<span style="color:var(--red)">Pick a payment method (Cash or MoMo).</span>'; return; }
 
   const itemNames = Object.keys(cart).filter(k => cart[k] > 0);
   if(itemNames.length === 0){ resultEl.innerHTML = '<span style="color:var(--red)">Cart is empty.</span>'; return; }
