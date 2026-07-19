@@ -209,8 +209,15 @@ body{background:var(--black);color:var(--text);font-family:'Syne',sans-serif;min
   </div>
 </div>
 
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script>
-const API_URL = 'https://script.google.com/macros/s/AKfycbyycYKCEtRchk0eToXIlMLgs3RmWIsKuUppD3UprPO8zLi9N5a9PIgn9uN4IKeip24E/exec'; // same deployment as the other dashboards
+const API_URL = 'https://script.google.com/macros/s/AKfycbyycYKCEtRchk0eToXIlMLgs3RmWIsKuUppD3UprPO8zLi9N5a9PIgn9uN4IKeip24E/exec'; // kept as-is; menu/location data still loads from here during the hybrid phase
+
+// SUPABASE MIGRATION — Step 1 (table_orders) + Step 2 (canteen_orders) live.
+// Everything else in this system still runs on the Apps Script URL above.
+const SUPABASE_URL = 'https://crvuzkyfrqbfmamegxjx.supabase.co';
+const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNydnV6a3lmcnFiZm1hbWVneGp4Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODQ0MzI5NjQsImV4cCI6MjEwMDAwODk2NH0.gMsv3yvw6plDCherA2YdU4UgWRMXUc9H1Hr_IdR9GxA';
+const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
 let locationType = null;
 let locationDetail = '';
@@ -563,20 +570,61 @@ async function submitOrder(){
   }
 }
 
+// SUPABASE MIGRATION: table_orders (Bar) and canteen_orders (Food) now
+// write directly to Postgres instead of going through Apps Script.
+// No LockService wait, no "system busy" — Postgres handles simultaneous
+// inserts from multiple phones natively. See SUPABASE_MIGRATION_GUIDE.md
+// Part 8. Everything else in this file (menu load, location list) is
+// still untouched and still reads from the Apps Script API_URL above.
+const ORDER_TABLE_BY_ACTION = {
+  placeTableOrder: 'table_orders',
+  placeCanteenOrder: 'canteen_orders'
+};
+
 async function trySendOrder(payload){
+  const table = ORDER_TABLE_BY_ACTION[payload.action];
+  if(!table){
+    return { ok: false, error: 'Unknown order type: ' + payload.action };
+  }
+
+  const orderId = (payload.action === 'placeCanteenOrder' ? 'CAN' : 'TBL') + Date.now();
+  let items;
+  try{ items = JSON.parse(payload.itemsJson); }catch(e){ items = []; }
+  // itemsJson only carries {item, qty} — same as cartTotal() elsewhere in
+  // this file, look the price up from the loaded menu by item name.
+  const total = items.reduce((s, it) => {
+    const m = menu.find(mm => mm.item === it.item);
+    return s + ((m ? m.price : 0) * (it.qty || 0));
+  }, 0);
+
   try{
-    const url = API_URL + '?action=' + encodeURIComponent(payload.action) + '&locationType=' + encodeURIComponent(payload.locationType) +
-      '&locationDetail=' + encodeURIComponent(payload.locationDetail) +
-      '&itemsJson=' + encodeURIComponent(payload.itemsJson) +
-      '&payment=' + encodeURIComponent(payload.payment) +
-      '&customerName=' + encodeURIComponent(payload.customerName) +
-      '&phone=' + encodeURIComponent(payload.phone) +
-      '&clientId=' + encodeURIComponent(payload.clientId) + '&t=' + Date.now();
-    const res = await fetch(url);
-    if(!res.ok) throw new Error('status ' + res.status);
-    const data = await res.json();
-    if(!data.success) return { ok: false, error: data.error || 'Order failed' };
-    return { ok: true, data: data };
+    const { data, error } = await supabaseClient
+      .from(table)
+      .insert([{
+        order_id: orderId,
+        location_type: payload.locationType,
+        location_detail: payload.locationDetail || null,
+        items_json: items,
+        total_ghs: total,
+        payment_method: payload.payment,
+        status: 'Placed',
+        customer_name: payload.customerName,
+        customer_phone: payload.phone,
+        client_request_id: payload.clientId
+      }])
+      .select()
+      .single();
+
+    if(error){
+      // Same clientId submitted twice (e.g. a retry after a dropped
+      // connection) — treat exactly like the old "replayed: true" logic.
+      if(error.code === '23505'){
+        return { ok: true, data: { orderId: orderId, total: total, replayed: true } };
+      }
+      throw new Error(error.message);
+    }
+
+    return { ok: true, data: { orderId: data.order_id, total: data.total_ghs } };
   }catch(e){
     return { ok: false, queued: true, error: 'No connection' };
   }
