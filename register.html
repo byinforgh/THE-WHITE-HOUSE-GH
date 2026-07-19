@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
-<title>THE WHITE HOUSE GH — Get Your Member ID</title>
+<title>THE WHITE HOUSE EVENTS & MORE — Get Your Member ID</title>
 <style>
   @import url('https://fonts.googleapis.com/css2?family=Syne:wght@600;700;800&family=Space+Mono:wght@400;700&display=swap');
   :root{
@@ -34,9 +34,11 @@
   p.sub{ color:var(--muted); font-size:13px; line-height:1.5; margin:0 0 20px;}
   label{ display:block; font-size:11px; text-transform:uppercase; letter-spacing:1px; color:var(--gold); margin:16px 0 6px; }
   label.req::after{ content:" *"; color:var(--teal); }
+  /* v1.1: font-size raised from 15px to 16px — iOS Safari auto-zooms
+     the page when focusing any input under 16px. */
   input[type=text], input[type=tel], input[type=email], select, textarea{
     width:100%; background:#1c1a15; border:1px solid var(--line); color:var(--text);
-    font-family:'Space Mono',monospace; font-size:15px; padding:14px; border-radius:10px; outline:none;
+    font-family:'Space Mono',monospace; font-size:16px; padding:14px; border-radius:10px; outline:none;
   }
   input:focus, select:focus, textarea:focus{ border-color:var(--gold); }
   textarea{ resize:vertical; min-height:70px; }
@@ -67,7 +69,6 @@
   .err{ color:#e77; font-size:12px; margin-top:6px; min-height:16px; }
   .spinner{ width:16px;height:16px;border-radius:50%; border:2px solid rgba(20,18,16,0.3); border-top-color:#141210; animation:spin .7s linear infinite; display:none; }
   @keyframes spin{ to{ transform:rotate(360deg); } }
-  /* Follow-us links on the outcome screen — inactive (no href) until a URL is filled in below */
   .follow-row{ display:flex; flex-wrap:wrap; gap:8px; margin-top:16px; }
   .follow-link{ display:inline-flex; align-items:center; gap:6px; background:#1c1a15; border:1px solid var(--line); color:var(--muted); font-family:'Space Mono',monospace; font-size:12px; padding:9px 14px; border-radius:20px; text-decoration:none; cursor:default; }
   .follow-link.live{ color:var(--teal); border-color:var(--teal); cursor:pointer; }
@@ -77,7 +78,7 @@
 
 <div class="card">
   <div class="brand">
-    <img src="logo-white.png" alt="THE WHITE HOUSE GH" onerror="this.onerror=null;this.replaceWith(Object.assign(document.createElement('div'),{className:'brand-fallback',textContent:'THE WHITE HOUSE GH'}));">
+    <img src="logo-white.png" alt="THE WHITE HOUSE EVENTS & MORE" onerror="this.onerror=null;this.replaceWith(Object.assign(document.createElement('div'),{className:'brand-fallback',textContent:'THE WHITE HOUSE EVENTS & MORE'}));">
     <div class="tagline">Members Club · Rewards</div>
   </div>
 
@@ -187,10 +188,15 @@ const CONFIG = {
 };
 
 /* -----------------------------------------------------------
-   FOLLOW-US / WEBSITE LINKS — leave the url fields blank for now.
-   The moment you drop a real link into any "url" below, that
-   button automatically lights up and becomes clickable on the
-   "You're a member" screen. Nothing else needs to change.
+   FOLLOW-US / WEBSITE LINKS
+   NOTE (rebrand): these URLs still point at the old
+   "thewhitehousegh" handles/domain. Renaming the business does not
+   automatically rename its social media accounts or website — if
+   you've actually created new accounts under the new name, swap the
+   URLs below to match. Left untouched here deliberately rather than
+   guessed, since a wrong guess is worse than a stale-but-correct
+   link. The button text itself already reads generically (TikTok,
+   Instagram, etc.) so nothing customer-facing says the old name.
    ----------------------------------------------------------- */
 const FOLLOW_LINKS = [
   { name:'TikTok',          url:'https://www.tiktok.com/@thewhitehousegh' },
@@ -200,7 +206,7 @@ const FOLLOW_LINKS = [
   { name:'WhatsApp Channel',url:'' }, // paste the channel invite link (whatsapp.com/channel/...) once you have it
   { name:'Google Review',   url:'' }  // paste your Google Maps review link here once you have it
 ];
-const WEBSITE_URL = 'https://www.thewhitehousegh.com';
+const WEBSITE_URL = 'https://www.thewhitehousegh.com'; // same rebrand note as above
 
 const SERVICES = ['Pool','Bar','Canteen','Events','Family Occasions','Couples','Other'];
 const HOW_HEARD = ['Social Media','Word of Mouth','Referral','Radio','TV','Sign','Other'];
@@ -217,8 +223,6 @@ function buildProgress(){
 buildProgress();
 function updateProgress(step){ for(let i=1;i<=totalSteps;i++) document.getElementById('seg'+i).classList.toggle('done', i<=step); }
 
-// Multi-select: tap to add, tap again to remove. Nothing auto-advances — the person
-// picks as many as apply, then taps Next themselves.
 function renderMultiChoiceGroup(containerId, hiddenId, items){
   document.getElementById(containerId).innerHTML = items.map(v =>
     `<button type="button" class="choice" onclick="toggleChoice('${containerId}','${hiddenId}','${v}',this)"><b>${v}</b></button>`
@@ -320,7 +324,7 @@ function renderFollowRow(){
 function showOutcome(silentFail, result){
   const el = document.getElementById('outcome');
   if(silentFail){
-    el.innerHTML = `<div class="success-icon">✓</div><h1>You're in.</h1><p class="sub">Thanks for registering with THE WHITE HOUSE GH.</p>`;
+    el.innerHTML = `<div class="success-icon">✓</div><h1>You're in.</h1><p class="sub">Thanks for registering with THE WHITE HOUSE EVENTS & MORE.</p>`;
   } else if(result && result.success){
     const waText = encodeURIComponent('Hi! I just registered — my Member ID is ' + result.custId);
     el.innerHTML = `
