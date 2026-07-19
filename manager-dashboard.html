@@ -1,14 +1,17 @@
 <!DOCTYPE html>
 <html lang="en">
 <!--
-  THE WHITE HOUSE GH — MANAGER COMMAND CENTRE (v1.1)
+  THE WHITE HOUSE EVENTS & MORE — MANAGER COMMAND CENTRE (v1.2)
   Paired with ManagerCommandCentre_Code.gs bound to the Manager
   Command Centre spreadsheet. Fill in API_URL below once deployed.
 
+  v1.2: rebrand + input font-size raised to 16px (iOS pinch-zoom fix,
+  same cause/fix as every other dashboard in this system).
+
   v1.1: added a dedicated COCKTAILS tab. Cocktail-family sales (from
-  the Bar system's 🍹 Cocktail Sales sheet — see BarSystem_
-  CocktailSeparation_PATCH.gs) now have their own read-only summary
-  here, separate from the general Bar/Canteen "Running Costing" tab.
+  the Bar system's 🍹 Cocktail Sales sheet) now have their own
+  read-only summary here, separate from the general Bar/Canteen
+  "Running Costing" tab.
 
   This dashboard pulls Bar/Canteen, Facilities, and Members data
   READ-ONLY from your existing systems — edits to those still happen
@@ -18,7 +21,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>The White House GH — Manager Command Centre</title>
+<title>The White House Events & More — Manager Command Centre</title>
 <link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Syne:wght@400;600;700;800&display=swap" rel="stylesheet">
 <style>
 :root{--black:#0a0a0a;--surface:#111111;--card:#181818;--border:#2a2a2a;--gold:#f5a623;--gold-dim:#c9861a;--teal:#3fb6a8;--red:#ef4444;--green:#22c55e;--purple:#8b5cf6;--pink:#ec4899;--text:#f2f2f2;--text-dim:#b5b5b5;--muted:#888;}
@@ -54,7 +57,9 @@ table{width:100%;border-collapse:collapse;font-size:12px;}
 th{text-align:left;padding:7px 8px;color:var(--muted);font-weight:700;letter-spacing:0.5px;border-bottom:1px solid var(--border);font-size:10px;}
 td{padding:6px 8px;border-bottom:1px solid #1a1a1a;}
 .scroll-table{max-height:420px;overflow-y:auto;}
-input,select,textarea{background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:9px 12px;color:var(--text);font-size:13px;font-family:'Syne',sans-serif;width:100%;margin-bottom:9px;outline:none;}
+/* v1.2: font-size raised from 13px to 16px — iOS Safari auto-zooms
+   the page when focusing any input under 16px. */
+input,select,textarea{background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:9px 12px;color:var(--text);font-size:16px;font-family:'Syne',sans-serif;width:100%;margin-bottom:9px;outline:none;}
 input:focus,select:focus,textarea:focus{border-color:var(--gold);}
 textarea{min-height:60px;resize:vertical;}
 .btn{background:var(--gold);color:var(--black);border:none;padding:10px 16px;border-radius:5px;cursor:pointer;font-size:12px;font-weight:800;letter-spacing:0.5px;font-family:'Syne',sans-serif;width:100%;}
@@ -89,7 +94,7 @@ textarea{min-height:60px;resize:vertical;}
 </head>
 <body>
 <div class="header">
-  <div class="logo">THE WHITE HOUSE GH <span>MANAGER COMMAND CENTRE</span></div>
+  <div class="logo">THE WHITE HOUSE EVENTS & MORE <span>MANAGER COMMAND CENTRE</span></div>
   <div class="header-right"><span class="last-refresh" id="lastRefresh">Loading...</span><button class="refresh-btn" onclick="loadData()">&#8635; REFRESH</button></div>
 </div>
 
@@ -221,7 +226,7 @@ textarea{min-height:60px;resize:vertical;}
     </div>
   </div>
 
-  <!-- COCKTAILS (new — reads the Bar system's 🍹 Cocktail Sales sheet) -->
+  <!-- COCKTAILS -->
   <div class="section" id="sec-cocktails">
     <div class="metrics-grid" id="cocktailMetrics"><div class="loading">Loading...</div></div>
     <div class="card">
@@ -584,7 +589,7 @@ function renderCosting(){
     <div class="bar-row"><div class="b-label">COGS actually used in sales</div><div class="bar-track"><div class="bar-fill" style="width:${bar.allTimeCOGSUsed && (foodPurchased+barPurchased) ? Math.min(100,(bar.allTimeCOGSUsed/(foodPurchased+barPurchased))*100) : 0}%"></div></div><div class="b-value">${fmt(bar.allTimeCOGSUsed)}</div></div>`;
 }
 
-// ---------- COCKTAILS (new — separate sheet, separate calculation) ----------
+// ---------- COCKTAILS ----------
 function renderCocktails(){
   const ck = data.cocktails || {};
   if(ck.error) { document.getElementById('cocktailMetrics').innerHTML = `<div class="empty" style="grid-column:1/-1">${ck.error}</div>`; document.getElementById('cocktailTopBody').innerHTML=''; document.getElementById('cocktailRecentBody').innerHTML=''; return; }
