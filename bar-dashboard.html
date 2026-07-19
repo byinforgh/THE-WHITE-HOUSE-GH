@@ -274,6 +274,13 @@ tr.low-row{background:#1a0a0a;}
         <div class="card-title">&#128230; RESTOCK AN ITEM</div>
         <input class="search-input" id="restockItem" placeholder="Item name (must match Bar Stock exactly)" list="stockItemList">
         <datalist id="stockItemList"></datalist>
+        <label style="font-size:11px;color:var(--muted);display:flex;align-items:center;gap:6px;margin:6px 0">
+          <input type="checkbox" id="restockMultiToggle" onchange="toggleRestockMulti()"> Restock several items at once, all at the same quantity
+        </label>
+        <div id="restockMultiBox" style="display:none;margin-bottom:6px">
+          <select class="select-input" id="restockMultiSelect" multiple size="6" style="height:auto;padding:4px"></select>
+          <div style="font-size:11px;color:var(--muted);margin-top:4px">Ctrl/Cmd-click (desktop) or tap each item (mobile) to pick more than one. The item field above is ignored while this is on.</div>
+        </div>
         <div class="restock-grid">
           <input class="search-input" id="restockQty" type="number" placeholder="Qty to add" style="margin:0">
           <input class="search-input" id="restockPar" type="number" placeholder="Par level (optional)" style="margin:0">
@@ -284,6 +291,33 @@ tr.low-row{background:#1a0a0a;}
         </select>
         <button class="btn" onclick="submitRestock()">+ ADD STOCK</button>
         <div id="restockResult" style="margin-top:8px;font-size:12px"></div>
+      </div>
+      <div class="card">
+        <div class="card-title">&#128176; MENU &amp; PRICES <span style="font-weight:400;color:var(--muted);text-transform:none;letter-spacing:0">(add, edit, or remove Bar/Food items and prices)</span></div>
+        <div class="restock-grid">
+          <select class="select-input" id="menuEditType" style="margin:0" onchange="renderMenuEditList()">
+            <option value="bar">Bar Drinks (Bar Recipes)</option>
+            <option value="food">Food (Food Menu)</option>
+          </select>
+          <button class="btn" style="margin:0;background:var(--border);color:var(--text)" onclick="startNewMenuItem()">+ NEW ITEM</button>
+        </div>
+        <input class="search-input" id="menuEditSearch" placeholder="Search this menu..." oninput="renderMenuEditList()">
+        <div id="menuEditList" class="scroll-table" style="max-height:160px;overflow-y:auto;margin-bottom:10px"></div>
+        <div id="menuEditForm" style="display:none">
+          <input class="search-input" id="meItemName" placeholder="Item name">
+          <div class="restock-grid">
+            <input class="search-input" id="meCategory" placeholder="Category" style="margin:0">
+            <input class="search-input" id="mePrice" type="number" placeholder="Price GHS" style="margin:0">
+          </div>
+          <input class="search-input" id="meDaysAvailable" placeholder="Days available — blank or 'All' = every day, e.g. Fri,Sat">
+          <input class="search-input" id="meNotes" placeholder="Notes (optional)">
+          <div class="restock-grid">
+            <button class="btn" id="meSaveBtn" style="margin:0" onclick="saveMenuItem()">SAVE</button>
+            <button class="btn" id="meDeleteBtn" style="margin:0;background:var(--red);color:#fff;display:none" onclick="deleteMenuItem()">DELETE</button>
+          </div>
+          <div style="font-size:11px;color:var(--muted);margin-top:6px">Ingredients/stock links for Bar items still need the Bar Recipes sheet directly — this panel is for name, category, price, availability, and notes.</div>
+          <div id="menuEditResult" style="margin-top:8px;font-size:12px"></div>
+        </div>
       </div>
     </div>
   </div>
@@ -331,18 +365,7 @@ tr.low-row{background:#1a0a0a;}
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jsQR/1.4.0/jsQR.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script>
-// SUPABASE MIGRATION: Table Orders read/write now goes straight to
-// Postgres (see mark_location_order_paid / set_location_order_status
-// functions — these replace updateOrderStatus_ and include the same
-// stock decrement + cocktail sales + loyalty points logic that used to
-// run in Apps Script). Everything else on this dashboard (Quick Sell,
-// stock, staff, customers) is still on the Apps Script API_URL below.
-const SUPABASE_URL = 'https://crvuzkyfrqbfmamegxjx.supabase.co';
-const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNydnV6a3lmcnFiZm1hbWVneGp4Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODQ0MzI5NjQsImV4cCI6MjEwMDAwODk2NH0.gMsv3yvw6plDCherA2YdU4UgWRMXUc9H1Hr_IdR9GxA';
-const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
-
 const API_URL = 'https://script.google.com/macros/s/AKfycbyycYKCEtRchk0eToXIlMLgs3RmWIsKuUppD3UprPO8zLi9N5a9PIgn9uN4IKeip24E/exec';
 
 // v5.7: bumped to match BarSystem_Code.gs v5.7 (Search & Sell sheet's
@@ -714,6 +737,124 @@ function populateStaffDropdowns(){
 function populateStockDatalist(){
   const items = (barData.stock||[]).map(s=>s.item);
   document.getElementById('stockItemList').innerHTML = items.map(i=>`<option value="${i}">`).join('');
+  const multiSel = document.getElementById('restockMultiSelect');
+  if(multiSel){
+    const prevSelected = new Set(Array.from(multiSel.selectedOptions).map(o=>o.value));
+    multiSel.innerHTML = items.map(i=>`<option value="${i}"${prevSelected.has(i)?' selected':''}>${i}</option>`).join('');
+  }
+}
+
+function toggleRestockMulti(){
+  const on = document.getElementById('restockMultiToggle').checked;
+  document.getElementById('restockMultiBox').style.display = on ? '' : 'none';
+  document.getElementById('restockItem').disabled = on;
+  document.getElementById('restockItem').placeholder = on ? 'Using the multi-item list below instead' : 'Item name (must match Bar Stock exactly)';
+}
+
+// FEATURE (requested): quick add/edit/delete for menu items and
+// prices, without needing to open the Bar Recipes / Food Menu sheet.
+let menuFullData = { bar: [], food: [] };
+let menuEditingOriginalName = null; // set when editing an existing item, so a rename still finds the right row
+
+async function loadMenuFull(){
+  try{
+    const res = await fetch(API_URL + '?action=getMenuFull&t=' + Date.now());
+    const data = await res.json();
+    if(data.success){ menuFullData = { bar: data.bar || [], food: data.food || [] }; }
+  }catch(e){ /* the list will just stay empty until the next successful load */ }
+  renderMenuEditList();
+}
+
+function renderMenuEditList(){
+  const type = document.getElementById('menuEditType').value;
+  const q = (document.getElementById('menuEditSearch').value || '').toLowerCase();
+  const items = (menuFullData[type] || []).filter(m => !q || m.item.toLowerCase().includes(q));
+  const el = document.getElementById('menuEditList');
+  if(items.length === 0){ el.innerHTML = '<div class="empty" style="padding:8px">No items yet — use + NEW ITEM to add one.</div>'; return; }
+  el.innerHTML = '<table><tbody>' + items.map(m => `
+    <tr style="cursor:pointer" onclick="editMenuItem('${type}', ${JSON.stringify(m.item).replace(/'/g,"\\'")})">
+      <td style="padding:6px 4px">${m.item}</td>
+      <td style="padding:6px 4px;color:var(--muted);font-size:11px">${m.category||''}</td>
+      <td style="padding:6px 4px;text-align:right">&#8373;${m.price.toFixed(2)}</td>
+    </tr>`).join('') + '</tbody></table>';
+}
+
+function startNewMenuItem(){
+  menuEditingOriginalName = null;
+  document.getElementById('menuEditForm').style.display = '';
+  document.getElementById('meItemName').value = '';
+  document.getElementById('meCategory').value = '';
+  document.getElementById('mePrice').value = '';
+  document.getElementById('meDaysAvailable').value = '';
+  document.getElementById('meNotes').value = '';
+  document.getElementById('meDeleteBtn').style.display = 'none';
+  document.getElementById('menuEditResult').innerHTML = '';
+  document.getElementById('meItemName').focus();
+}
+
+function editMenuItem(type, itemName){
+  const m = (menuFullData[type] || []).find(x => x.item === itemName);
+  if(!m) return;
+  document.getElementById('menuEditType').value = type;
+  menuEditingOriginalName = m.item;
+  document.getElementById('menuEditForm').style.display = '';
+  document.getElementById('meItemName').value = m.item;
+  document.getElementById('meCategory').value = m.category || '';
+  document.getElementById('mePrice').value = m.price;
+  document.getElementById('meDaysAvailable').value = m.daysAvailable || '';
+  document.getElementById('meNotes').value = m.notes || '';
+  document.getElementById('meDeleteBtn').style.display = '';
+  document.getElementById('menuEditResult').innerHTML = '';
+}
+
+async function saveMenuItem(){
+  const resultEl = document.getElementById('menuEditResult');
+  const menuType = document.getElementById('menuEditType').value;
+  const itemName = document.getElementById('meItemName').value.trim();
+  const category = document.getElementById('meCategory').value.trim();
+  const price = document.getElementById('mePrice').value;
+  const daysAvailable = document.getElementById('meDaysAvailable').value.trim();
+  const notes = document.getElementById('meNotes').value.trim();
+  if(!itemName){ resultEl.innerHTML = '<span style="color:var(--red)">Item name is required.</span>'; return; }
+  if(price === '' || isNaN(parseFloat(price)) || parseFloat(price) < 0){ resultEl.innerHTML = '<span style="color:var(--red)">Enter a valid price.</span>'; return; }
+  resultEl.innerHTML = 'Saving...';
+  let url = API_URL + '?action=saveMenuItem&menuType=' + encodeURIComponent(menuType) + '&itemName=' + encodeURIComponent(itemName) +
+    '&category=' + encodeURIComponent(category) + '&price=' + encodeURIComponent(price) +
+    '&daysAvailable=' + encodeURIComponent(daysAvailable) + '&notes=' + encodeURIComponent(notes);
+  if(menuEditingOriginalName) url += '&originalName=' + encodeURIComponent(menuEditingOriginalName);
+  url += '&t=' + Date.now();
+  try{
+    const res = await fetch(url);
+    const data = await res.json();
+    if(!data.success){ resultEl.innerHTML = '<span style="color:var(--red)">' + data.error + '</span>'; return; }
+    resultEl.innerHTML = `<span class="flash">&#10003; ${itemName} saved.</span>`;
+    menuEditingOriginalName = itemName;
+    document.getElementById('meDeleteBtn').style.display = '';
+    await loadMenuFull();
+    loadData(); // refresh Quick Sell / order menus elsewhere on the dashboard too
+    setTimeout(() => { resultEl.innerHTML = ''; }, 5000);
+  }catch(e){
+    resultEl.innerHTML = '<span style="color:var(--red)">Could not save — check your connection and try again.</span>';
+  }
+}
+
+async function deleteMenuItem(){
+  const resultEl = document.getElementById('menuEditResult');
+  const menuType = document.getElementById('menuEditType').value;
+  const itemName = document.getElementById('meItemName').value.trim();
+  if(!itemName) return;
+  if(!confirm(`Remove "${itemName}" from the ${menuType === 'food' ? 'Food' : 'Bar'} menu? This can't be undone from here.`)) return;
+  resultEl.innerHTML = 'Removing...';
+  try{
+    const res = await fetch(API_URL + '?action=deleteMenuItem&menuType=' + encodeURIComponent(menuType) + '&itemName=' + encodeURIComponent(itemName) + '&t=' + Date.now());
+    const data = await res.json();
+    if(!data.success){ resultEl.innerHTML = '<span style="color:var(--red)">' + data.error + '</span>'; return; }
+    document.getElementById('menuEditForm').style.display = 'none';
+    await loadMenuFull();
+    loadData();
+  }catch(e){
+    resultEl.innerHTML = '<span style="color:var(--red)">Could not remove — check your connection and try again.</span>';
+  }
 }
 
 let lastFoundCustomer = null;
@@ -760,6 +901,8 @@ function generateCustomerQR(){
 }
 
 async function submitRestock(){
+  const isMulti = document.getElementById('restockMultiToggle').checked;
+  if(isMulti){ return submitRestockMulti(); }
   const item = document.getElementById('restockItem').value.trim();
   const qtyAdded = document.getElementById('restockQty').value;
   const parLevel = document.getElementById('restockPar').value;
@@ -779,10 +922,18 @@ async function submitRestock(){
   if(result.ok){
     const data = result.data;
     resultEl.innerHTML = `<span class="flash">&#10003; ${item} — new qty: ${data.newQty}${data.newItem?' (new item created)':''} · logged under ${data.restockedBy} at ${data.timestamp}</span>`;
+    // FIX (bug report: form "stayed on" the last item/staff instead of
+    // refreshing). Item/qty/par/cost were already cleared here, but the
+    // staff dropdown was not — restoring that, plus auto-clearing the
+    // confirmation message after a few seconds so the form visibly
+    // returns to its blank, ready-for-the-next-restock state.
     document.getElementById('restockItem').value = '';
     document.getElementById('restockQty').value = '';
     document.getElementById('restockPar').value = '';
     document.getElementById('restockCost').value = '';
+    document.getElementById('restockBy').value = '';
+    document.getElementById('restockItem').focus();
+    setTimeout(() => { if(resultEl.innerHTML.indexOf(item) !== -1) resultEl.innerHTML = ''; }, 6000);
     loadData();
   }else if(result.queued){
     resultEl.innerHTML = '<span style="color:var(--teal)">&#9203; ' + result.error + ' Meanwhile, you can restock directly in the Bar Stock sheet if this is urgent.</span>';
@@ -790,9 +941,60 @@ async function submitRestock(){
     document.getElementById('restockQty').value = '';
     document.getElementById('restockPar').value = '';
     document.getElementById('restockCost').value = '';
+    document.getElementById('restockBy').value = '';
   }else{
     resultEl.innerHTML = '<span style="color:var(--red)">' + result.error + '</span>';
   }
+}
+
+// FEATURE (requested): restock several items in one go, all at the
+// same quantity. Sends one addBarStock call per item, one after
+// another (not in parallel — Bar Stock writes go through Google
+// Sheets' single-writer lock, so parallel calls would just queue up
+// anyway and this way you get a clean per-item result list).
+async function submitRestockMulti(){
+  const multiSel = document.getElementById('restockMultiSelect');
+  const items = Array.from(multiSel.selectedOptions).map(o => o.value);
+  const qtyAdded = document.getElementById('restockQty').value;
+  const parLevel = document.getElementById('restockPar').value;
+  const costPerUnit = document.getElementById('restockCost').value;
+  const restockedBy = document.getElementById('restockBy').value;
+  const resultEl = document.getElementById('restockResult');
+  if(items.length === 0){ resultEl.innerHTML = '<span style="color:var(--red)">Pick at least one item from the list.</span>'; return; }
+  if(!qtyAdded){ resultEl.innerHTML = '<span style="color:var(--red)">Quantity is required.</span>'; return; }
+  if(!restockedBy){ resultEl.innerHTML = '<span style="color:var(--red)">Pick who is restocking from the dropdown.</span>'; return; }
+
+  const outcomes = [];
+  for(const item of items){
+    resultEl.innerHTML = `Saving ${outcomes.length+1} of ${items.length}: ${item}...`;
+    let url = API_URL + '?action=addBarStock&item=' + encodeURIComponent(item) + '&qtyAdded=' + encodeURIComponent(qtyAdded) + '&restockedBy=' + encodeURIComponent(restockedBy);
+    if(parLevel) url += '&parLevel=' + encodeURIComponent(parLevel);
+    if(costPerUnit) url += '&costPerUnit=' + encodeURIComponent(costPerUnit);
+    url += '&t=' + Date.now();
+    const clientId = genClientId();
+    const label = `Restock: +${qtyAdded} ${item} (${restockedBy})`;
+    const result = await fetchOrQueue(url, 'restock', label, clientId);
+    outcomes.push({ item, result });
+  }
+
+  const okList = outcomes.filter(o => o.result.ok).map(o => o.item);
+  const queuedList = outcomes.filter(o => o.result.queued).map(o => o.item);
+  const failedList = outcomes.filter(o => !o.result.ok && !o.result.queued);
+
+  let html = '';
+  if(okList.length) html += `<div class="flash">&#10003; Restocked +${qtyAdded} each: ${okList.join(', ')}</div>`;
+  if(queuedList.length) html += `<div style="color:var(--teal)">&#9203; Queued (will send once back online): ${queuedList.join(', ')}</div>`;
+  if(failedList.length) html += `<div style="color:var(--red)">Failed: ${failedList.map(o=>o.item+' — '+o.result.error).join(', ')}</div>`;
+  resultEl.innerHTML = html;
+
+  // Reset back to a clean, ready-for-next-restock state.
+  document.getElementById('restockQty').value = '';
+  document.getElementById('restockPar').value = '';
+  document.getElementById('restockCost').value = '';
+  document.getElementById('restockBy').value = '';
+  multiSel.selectedIndex = -1;
+  if(okList.length + queuedList.length > 0) setTimeout(() => { resultEl.innerHTML = ''; }, 8000);
+  loadData();
 }
 
 let scannerStream = null;
@@ -1213,33 +1415,18 @@ function playOrderBeep(){
   }catch(e){ }
 }
 
-function shapeSupabaseOrderRow(r){
-  return {
-    orderId: r.order_id, locationType: r.location_type, locationDetail: r.location_detail || '',
-    items: r.items_json || [], total: parseFloat(r.total_ghs) || 0, payment: r.payment_method,
-    status: r.status, momoRef: r.momo_reference || '', customerName: r.customer_name,
-    phone: r.customer_phone, handledBy: r.handled_by || '', timestamp: r.created_at
-  };
-}
-
 async function loadTableOrders(){
   try{
-    const { data, error } = await supabaseClient
-      .from('table_orders')
-      .select('*')
-      .order('created_at', { ascending: false })
-      .limit(200);
-    if(error) throw new Error(error.message);
+    const res = await fetch(API_URL + '?action=getTableOrders&t=' + Date.now());
+    if(!res.ok) throw new Error('status ' + res.status);
+    const data = await res.json();
+    if(!data.success) throw new Error(data.error || 'Failed to load table orders');
+    tableOrdersData = data;
 
-    const shaped = data.map(shapeSupabaseOrderRow);
-    const active = shaped.filter(o => o.status !== 'Paid' && o.status !== 'Cancelled');
-    const recentFinal = shaped.filter(o => o.status === 'Paid' || o.status === 'Cancelled').slice(0, 15);
-    tableOrdersData = { success: true, active: active, recentFinal: recentFinal };
-
-    const currentIds = new Set(active.map(o=>o.orderId));
+    const currentIds = new Set(data.active.map(o=>o.orderId));
     let hasNewPlaced = false;
     if(!tableOrdersFirstLoad){
-      active.forEach(o => {
+      data.active.forEach(o => {
         if(o.status === 'Placed' && !seenActiveOrderIds.has(o.orderId)) hasNewPlaced = true;
       });
     }
@@ -1247,6 +1434,8 @@ async function loadTableOrders(){
     seenActiveOrderIds = currentIds;
     tableOrdersFirstLoad = false;
 
+    // clean up staff selections / processing flags for orders that are
+    // no longer active (paid/cancelled/gone)
     Object.keys(orderStaffSelections).forEach(id => { if(!currentIds.has(id)) delete orderStaffSelections[id]; });
     Array.from(processingOrderIds).forEach(id => { if(!currentIds.has(id)) processingOrderIds.delete(id); });
 
@@ -1382,35 +1571,17 @@ async function tableOrderAction(orderId, newStatus){
   lastActiveSignature = null;
   renderTableOrders();
 
-  // SUPABASE MIGRATION: this now calls a Postgres function instead of
-  // Apps Script. mark_location_order_paid does the same stock-decrement
-  // + cocktail-sales + loyalty-points work updateOrderStatus_ used to do
-  // server-side, atomically, and is safe to retry (duplicate taps are a
-  // no-op — see already_final in the function). No offline queue here:
-  // if there's no connection, the RPC call just fails and the button
-  // re-enables, same as before, staff just tries again once back online.
-  let result;
-  try{
-    let rpcResult;
-    if(newStatus === 'Paid'){
-      rpcResult = await supabaseClient.rpc('mark_location_order_paid', {
-        p_table: 'table_orders', p_order_id: orderId, p_staff: staffInitials, p_momo: momoReference || null
-      });
-    }else{
-      rpcResult = await supabaseClient.rpc('set_location_order_status', {
-        p_table: 'table_orders', p_order_id: orderId, p_new_status: newStatus, p_staff: staffInitials,
-        p_reason: null
-      });
-    }
-    if(rpcResult.error) throw new Error(rpcResult.error.message);
-    result = { ok: true };
-  }catch(e){
-    result = { ok: false, error: e.message };
-  }
+  let url = API_URL + '?action=updateTableOrderStatus&orderId=' + encodeURIComponent(orderId) + '&newStatus=' + encodeURIComponent(newStatus) + '&staffInitials=' + encodeURIComponent(staffInitials);
+  if(momoReference) url += '&momoReference=' + encodeURIComponent(momoReference);
+  url += '&t=' + Date.now();
+
+  const clientId = genClientId();
+  const label = `Order ${orderId} -> ${newStatus}`;
+  const result = await fetchOrQueue(url, 'tableOrder', label, clientId);
 
   processingOrderIds.delete(orderId);
 
-  if(result.ok){
+  if(result.ok || result.queued){
     if(newStatus === 'Paid' || newStatus === 'Cancelled') delete orderStaffSelections[orderId];
     lastActiveSignature = null;
     loadTableOrders();
@@ -1433,6 +1604,7 @@ loadData();
 scheduleNext(loadData, 25000, 10000);
 loadTableOrders();
 scheduleNext(loadTableOrders, 8000, 4000);
+loadMenuFull();
 </script>
 </body>
 </html>
