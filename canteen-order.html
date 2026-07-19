@@ -458,14 +458,29 @@ async function submitOrder(){
     updateCartBar();
     closeCartModal();
     showConfirmation(result.data, selectedPayment);
+    // FIX (bug report: submit button stayed stuck on "Sending order..."
+    // after a successful submit, requiring a manual page refresh).
+    if(selectedPayment){ selectPayment(selectedPayment); }
   }else if(result.queued){
     savePendingOrder(orderPayload);
     cart = {};
     updateCartBar();
     closeCartModal();
     showQueuedScreen();
+    if(selectedPayment){ selectPayment(selectedPayment); }
   }else{
-    document.getElementById('submitError').textContent = result.error || 'Could not submit order — please try again.';
+    // FIX (bug report: an item rejected as "not on the menu" even
+    // though it was still visible/selectable — the page's menu had
+    // gone stale since it was loaded). Refresh the live menu and drop
+    // the offending item so the next attempt isn't a dead end.
+    const staleItemError = /not on the menu|not found in bar recipes|not found in .*food menu/i.test(result.error || '');
+    if(staleItemError){
+      names.forEach(n => delete cart[n]);
+      updateCartBar();
+      await loadFoodMenu();
+      renderCartModal();
+    }
+    document.getElementById('submitError').textContent = (result.error || 'Could not submit order — please try again.') + (staleItemError ? ' The menu has been refreshed \u2014 that item was removed from your cart.' : '');
     btn.disabled = false;
     btn.textContent = selectedPayment === 'MoMo' ? 'SUBMIT ORDER — PAY BY MOMO' : 'SUBMIT ORDER — PAY CASH ON DELIVERY/PICKUP';
   }
@@ -551,8 +566,21 @@ function showConfirmation(data, payment){
     <h2>Order sent!</h2>
     <div class="order-id">Order ${data.orderId} &middot; ${locationType}${locationDetail ? ' — ' + locationDetail : ''}</div>
     ${payHtml}
-    <button class="btn" onclick="document.getElementById('confirmModal').classList.remove('show')">ORDER SOMETHING ELSE</button>`;
+    <button class="btn" onclick="resetForNewOrder()">ORDER SOMETHING ELSE</button>`;
   document.getElementById('confirmModal').classList.add('show');
+}
+
+// FIX (bug report: tapping "order something else" left the previous
+// order/cart state visible and the submit button still disabled).
+function resetForNewOrder(){
+  document.getElementById('confirmModal').classList.remove('show');
+  document.getElementById('submitError').textContent = '';
+  cart = {};
+  updateCartBar();
+  renderMenu();
+  renderCartModal();
+  if(selectedPayment){ selectPayment(selectedPayment); }
+  window.scrollTo({top:0, behavior:'smooth'});
 }
 
 init();
