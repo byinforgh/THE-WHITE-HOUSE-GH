@@ -1,7 +1,9 @@
 <!DOCTYPE html>
 <html lang="en">
 <!--
-  THE WHITE HOUSE GH — FACILITIES DASHBOARD (v1.0)
+  THE WHITE HOUSE EVENTS & MORE — FACILITIES DASHBOARD (v1.1)
+  v1.1: rebrand + input font-size raised to 16px (iOS pinch-zoom fix,
+  same cause/fix as the bar/canteen dashboards).
   Fill in API_URL below once the Facilities Apps Script is deployed
   (see setup notes at the top of Code.gs). This is a SEPARATE
   deployment from the Bar and Members dashboards.
@@ -9,7 +11,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>The White House GH — Facilities Dashboard</title>
+<title>The White House Events & More — Facilities Dashboard</title>
 <link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Syne:wght@400;600;700;800&display=swap" rel="stylesheet">
 <style>
 :root{--black:#0a0a0a;--surface:#111111;--card:#181818;--border:#2a2a2a;--gold:#f5a623;--gold-dim:#c9861a;--teal:#3fb6a8;--red:#ef4444;--green:#22c55e;--purple:#8b5cf6;--text:#f2f2f2;--text-dim:#b5b5b5;--muted:#888;}
@@ -47,7 +49,9 @@ body{background:var(--black);color:var(--text);font-family:'Syne',sans-serif;min
 .section.active{display:block;}
 .card{background:var(--card);border:1px solid var(--border);border-radius:8px;padding:18px;margin-bottom:16px;}
 .card-title{font-size:11px;font-weight:700;letter-spacing:2px;color:var(--muted);margin-bottom:14px;text-transform:uppercase;}
-.search-input,.select-input,textarea.ta{background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:10px 14px;color:var(--text);font-size:13px;font-family:'Syne',sans-serif;width:100%;margin-bottom:10px;outline:none;}
+/* v1.1: font-size raised from 13px to 16px — iOS Safari auto-zooms
+   the page when focusing any input under 16px. */
+.search-input,.select-input,textarea.ta{background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:10px 14px;color:var(--text);font-size:16px;font-family:'Syne',sans-serif;width:100%;margin-bottom:10px;outline:none;}
 .search-input:focus,.select-input:focus,textarea.ta:focus{border-color:var(--gold);}
 textarea.ta{min-height:64px;resize:vertical;}
 .btn{background:var(--gold);color:var(--black);border:none;padding:10px 18px;border-radius:5px;cursor:pointer;font-size:12px;font-weight:800;letter-spacing:1px;font-family:'Syne',sans-serif;width:100%;}
@@ -98,7 +102,7 @@ textarea.ta{min-height:64px;resize:vertical;}
 </head>
 <body>
 <div class="header">
-  <div class="logo">THE WHITE HOUSE GH <span>FACILITIES &amp; MAINTENANCE</span></div>
+  <div class="logo">THE WHITE HOUSE EVENTS & MORE <span>FACILITIES &amp; MAINTENANCE</span></div>
   <div class="header-right"><span class="last-refresh" id="lastRefresh">Loading...</span><button class="refresh-btn" onclick="loadData()">&#8635; REFRESH</button></div>
 </div>
 
