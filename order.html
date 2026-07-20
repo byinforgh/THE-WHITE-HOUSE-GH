@@ -571,6 +571,9 @@ async function submitOrder(){
   succeeded.concat(queued).forEach(o => o.names.forEach(n => delete cart[n]));
   updateCartBar();
   queued.forEach(o => savePendingOrder(o.payload));
+  
+  btn.disabled = false;
+  btn.textContent = 'SUBMIT ORDER';
 
   if(failed.length > 0){
     renderMenu();
