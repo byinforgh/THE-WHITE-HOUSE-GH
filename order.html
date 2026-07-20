@@ -279,10 +279,28 @@ function init(){
 
 async function loadFoodMenu(afterLoad){
   try{
-    const res = await fetch(API_URL + '?action=getMenuPublic&t=' + Date.now());
-    const data = await res.json();
-    if(!data.success) throw new Error(data.error || 'Could not load menu');
-    menu = data.menu || [];
+    // SUPABASE MIGRATION: the menu shown to customers now comes from
+    // the same bar_recipes/food_menu tables mark_location_order_paid
+    // looks items up against — this is what fixes "item not found"
+    // errors caused by the two menu copies drifting apart. Location
+    // types and MoMo details aren't in Supabase yet, still from Sheets.
+    const [recipesRes, foodRes, appsScriptRes] = await Promise.all([
+      supabaseClient.from('bar_recipes').select('item_name, category, price_ghs'),
+      supabaseClient.from('food_menu').select('item_name, category, price_ghs'),
+      fetch(API_URL + '?action=getMenuPublic&t=' + Date.now())
+    ]);
+    if(recipesRes.error) throw new Error(recipesRes.error.message);
+    if(foodRes.error) throw new Error(foodRes.error.message);
+    const data = await appsScriptRes.json();
+    if(!data.success) throw new Error(data.error || 'Could not load location/payment options');
+
+    const COCKTAIL_CATS = ['Cocktail','Mocktail','Milkshake','Smoothie','Juice','VIP Special'];
+    const BAR_FIRST = ['Beer','Soft Drink','Water','Energy','Alcoholic Single','Just Sip','Shot','Pizza','Rice Dishes','Fries','Swallow & Stew','Light Bites'];
+    const catRank = c => { const i = BAR_FIRST.indexOf(c); if(i!==-1) return i; const j = COCKTAIL_CATS.indexOf(c); return j!==-1 ? BAR_FIRST.length+j : BAR_FIRST.length+COCKTAIL_CATS.length; };
+    menu = recipesRes.data.map(r => ({ item: r.item_name, category: r.category||'', price: parseFloat(r.price_ghs)||0, source: 'bar' }))
+      .concat(foodRes.data.map(r => ({ item: r.item_name, category: r.category||'', price: parseFloat(r.price_ghs)||0, source: 'food' })))
+      .sort((a,b) => catRank(a.category) - catRank(b.category));
+
     momoNumber = data.momoNumber || '';
     momoName = data.momoName || '';
     locationTypes = data.locationTypes || ['Table','Pickup','Terrace Area','Room Number','Bar Area','VIP Area','Pool','Stage Area','Stage 2 Area'];
