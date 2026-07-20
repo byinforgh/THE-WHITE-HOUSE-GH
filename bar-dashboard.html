@@ -108,6 +108,13 @@ tr.low-row{background:#1a0a0a;}
 .customer-result.show{display:block;}
 .customer-result b{color:var(--teal);}
 .restock-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:10px;}
+.combo-wrap{position:relative;margin-bottom:10px;}
+.combo-list{display:none;position:absolute;top:100%;left:0;right:0;background:var(--surface);border:1px solid var(--gold);border-top:none;border-radius:0 0 8px 8px;max-height:220px;overflow-y:auto;z-index:50;}
+.combo-list.show{display:block;}
+.combo-item{padding:9px 14px;font-size:13px;cursor:pointer;border-bottom:1px solid var(--border);}
+.combo-item:last-child{border-bottom:none;}
+.combo-item:hover,.combo-item.active{background:#221f16;color:var(--gold);}
+.combo-empty{padding:9px 14px;font-size:12px;color:var(--muted);}
 .scroll-table{max-height:420px;overflow-y:auto;}
 .badge-unit{font-size:9px;color:var(--muted);font-family:'Space Mono',monospace;}
 .staff-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:10px;}
@@ -272,8 +279,17 @@ tr.low-row{background:#1a0a0a;}
       </div>
       <div class="card">
         <div class="card-title">&#128230; RESTOCK AN ITEM</div>
-        <input class="search-input" id="restockItem" placeholder="Item name (must match Bar Stock exactly)" list="stockItemList">
-        <datalist id="stockItemList"></datalist>
+        <div class="combo-wrap" id="restockItemComboWrap">
+          <input class="search-input" id="restockItem" placeholder="Item name (must match Bar Stock exactly)" autocomplete="off" style="margin-bottom:0">
+          <div class="combo-list" id="restockItemComboList"></div>
+        </div>
+        <label style="font-size:11px;color:var(--muted);display:flex;align-items:center;gap:6px;margin:10px 0 6px">
+          <input type="checkbox" id="restockMultiToggle" onchange="toggleRestockMulti()"> Restock several items at once, all at the same quantity
+        </label>
+        <div id="restockMultiBox" style="display:none;margin-bottom:6px">
+          <select class="select-input" id="restockMultiSelect" multiple size="6" style="height:auto;padding:4px"></select>
+          <div style="font-size:11px;color:var(--muted);margin-top:4px">Ctrl/Cmd-click (desktop) or tap each item (mobile) to pick more than one. The item field above is ignored while this is on.</div>
+        </div>
         <div class="restock-grid">
           <input class="search-input" id="restockQty" type="number" placeholder="Qty to add" style="margin:0">
           <input class="search-input" id="restockPar" type="number" placeholder="Par level (optional)" style="margin:0">
@@ -479,20 +495,102 @@ function renderVersionBanner(reportedVersion){
      </ol>`;
 }
 
+// SUPABASE MIGRATION: stock, sales (bar_orders), menu (bar_recipes +
+// food_menu), and restock log now all live in Supabase — this is the
+// single source of truth for those going forward. Staff (names/hours,
+// which aren't in the Supabase staff table yet) still comes from the
+// Apps Script/Sheets side. Quick Sell and Restock write to Supabase
+// via quick_sell_item / restock_item (see submitQuickSellCart /
+// submitRestock below) — Google Sheets' Bar Stock / Bar Orders tabs
+// are no longer being written to by this dashboard.
+async function loadSupabaseBarData(){
+  const [stockRes, ordersRes, recipesRes, foodRes, restockRes, txRes] = await Promise.all([
+    supabaseClient.from('bar_stock').select('*').order('item'),
+    supabaseClient.from('bar_orders').select('*').order('created_at', { ascending: false }).limit(500),
+    supabaseClient.from('bar_recipes').select('item_name, category, price_ghs'),
+    supabaseClient.from('food_menu').select('item_name, category, price_ghs'),
+    supabaseClient.from('restock_log').select('*').order('created_at', { ascending: false }).limit(15),
+    supabaseClient.from('transactions').select('category, amount_ghs, payment_method, created_at')
+  ]);
+  [stockRes, ordersRes, recipesRes, foodRes, restockRes, txRes].forEach(r => { if(r.error) throw new Error(r.error.message); });
+
+  // Match Code.gs's buildCategoryMap_: a stock item's "category" for
+  // display purposes is whatever category the same-named recipe/menu
+  // item has (most stock items are self-referencing, e.g. "Fanta" the
+  // stock ingredient has the same name as "Fanta" the sellable item).
+  const categoryMap = {};
+  recipesRes.data.forEach(r => { if(r.item_name && r.category) categoryMap[r.item_name.trim().toLowerCase()] = r.category; });
+
+  const stock = stockRes.data.map(s => ({
+    item: s.item, unit: s.unit || 'unit', currentQty: parseFloat(s.current_qty)||0, parLevel: parseFloat(s.par_level)||0,
+    costPerUnit: parseFloat(s.cost_per_unit)||0, lastRestocked: s.last_restocked ? new Date(s.last_restocked).toLocaleString('en-GB') : '',
+    lastRestockedBy: s.last_restocked_by || '', unitsPerPack: 0, packLabel: '',
+    lowStock: (parseFloat(s.current_qty)||0) <= (parseFloat(s.par_level)||0),
+    category: categoryMap[(s.item||'').trim().toLowerCase()] || 'Bar Ingredient'
+  }));
+
+  // Bar categories first, cocktail-family last — same ordering rule as Code.gs's CATEGORY_SORT_ORDER.
+  const COCKTAIL_CATS = ['Cocktail','Mocktail','Milkshake','Smoothie','Juice','VIP Special'];
+  const BAR_FIRST = ['Beer','Soft Drink','Water','Energy','Alcoholic Single','Just Sip','Shot','Pizza','Rice Dishes','Fries','Swallow & Stew','Light Bites'];
+  const catRank = c => { const i = BAR_FIRST.indexOf(c); if(i!==-1) return i; const j = COCKTAIL_CATS.indexOf(c); return j!==-1 ? BAR_FIRST.length+j : BAR_FIRST.length+COCKTAIL_CATS.length; };
+  const menu = recipesRes.data.map(r => ({ item: r.item_name, category: r.category||'', price: parseFloat(r.price_ghs)||0, source: 'bar' }))
+    .concat(foodRes.data.map(r => ({ item: r.item_name, category: r.category||'', price: parseFloat(r.price_ghs)||0, source: 'food' })))
+    .sort((a,b) => catRank(a.category) - catRank(b.category));
+
+  const GHANA_TZ_TODAY = new Date().toLocaleDateString('en-CA', {timeZone:'Africa/Accra'}); // YYYY-MM-DD, for same-day comparison
+  const todayOrders = [];
+  let todayRevenue = 0, todayItemCount = 0;
+  const salesByItem = {}, revenueByPayment = {};
+  ordersRes.data.forEach(o => {
+    const d = new Date(o.created_at);
+    const dayStr = d.toLocaleDateString('en-CA', {timeZone:'Africa/Accra'});
+    const qty = parseFloat(o.qty)||0, lineTotal = parseFloat(o.line_total_ghs)||0;
+    if(!salesByItem[o.item_name]) salesByItem[o.item_name] = {item:o.item_name, qty:0, revenue:0};
+    salesByItem[o.item_name].qty += qty; salesByItem[o.item_name].revenue += lineTotal;
+    if(dayStr === GHANA_TZ_TODAY){
+      todayOrders.push({ timestamp: o.created_at, orderId: o.order_id, item: o.item_name, qty, unitPrice: parseFloat(o.unit_price_ghs)||0,
+        lineTotal, staffInitials: o.staff_initials||'', custId: o.customer_id||'—', payment: o.payment_method||'Unspecified' });
+      todayRevenue += lineTotal; todayItemCount += qty;
+      const pk = o.payment_method || 'Unspecified';
+      revenueByPayment[pk] = (revenueByPayment[pk]||0) + lineTotal;
+    }
+  });
+  const topSellers = Object.values(salesByItem).sort((a,b)=>b.qty-a.qty).slice(0,8);
+  const revenueByPaymentList = Object.keys(revenueByPayment).map(k=>({method:k, revenue:revenueByPayment[k]})).sort((a,b)=>b.revenue-a.revenue);
+
+  const staleStock = stock.slice().sort((a,b) => {
+    const da = a.lastRestocked ? new Date(a.lastRestocked).getTime() : null;
+    const db = b.lastRestocked ? new Date(b.lastRestocked).getTime() : null;
+    if(da===null && db===null) return 0; if(da===null) return -1; if(db===null) return 1;
+    return da - db;
+  }).slice(0,8);
+
+  const restockLog = restockRes.data.map(r => ({
+    timestamp: new Date(r.created_at).toLocaleString('en-GB'), item: r.item, qtyAdded: parseFloat(r.qty_added)||0,
+    newQty: parseFloat(r.new_qty)||0, restockedBy: r.restocked_by||''
+  }));
+
+  return { stock, menu, todayOrders: todayOrders.reverse(), todayRevenue, todayItemCount, revenueByPayment: revenueByPaymentList,
+    topSellers, staleStock, restockLog, lowStockCount: stock.filter(s=>s.lowStock).length };
+}
+
 async function loadData(){
   updateConnStatus();
   renderPendingBanner();
   if(navigator.onLine) flushPendingQueue(true);
   document.getElementById('lastRefresh').innerHTML = 'Refreshing...';
   try{
-    const res = await fetch(API_URL + '?action=getBarData&t=' + Date.now());
-    if(!res.ok){ throw new Error('Server responded with status ' + res.status); }
-    const data = await res.json();
-    if(!data.success) throw new Error(data.error || 'Unknown error');
-    barData = data;
+    const [supaData, appsScriptData] = await Promise.all([
+      loadSupabaseBarData(),
+      fetch(API_URL + '?action=getBarData&t=' + Date.now()).then(r => r.ok ? r.json() : Promise.reject(new Error('Server responded with status ' + r.status)))
+    ]);
+    if(!appsScriptData.success) throw new Error(appsScriptData.error || 'Unknown error');
+    // Supabase supplies stock/orders/menu/restockLog/staleStock/topSellers
+    // (the live source now); staff + backend version still come from Sheets.
+    barData = { ...appsScriptData, ...supaData, staff: appsScriptData.staff };
     clearApiError();
     document.getElementById('lastRefresh').innerHTML = 'Updated: ' + new Date().toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit'}) + ' <span class="version-pill" id="versionPill"></span>';
-    renderVersionBanner(data.backendVersion || null);
+    renderVersionBanner(appsScriptData.backendVersion || null);
     renderMetrics();
     renderLowStockBanner();
     renderOrders();
@@ -509,7 +607,7 @@ async function loadData(){
     renderQuickSellPanel();
   }catch(e){
     document.getElementById('lastRefresh').textContent = 'Offline — see message above';
-    showApiError(e.message || 'Could not load data (unknown error). If you have no internet right now, use the Search & Sell sheet directly — it works without this dashboard.');
+    showApiError(e.message || 'Could not load data (unknown error).');
     console.log('Load error:', e);
   }
 }
@@ -711,10 +809,59 @@ function populateStaffDropdowns(){
   if(staff.some(s=>s.initials===current)) sel.value = current;
 }
 
+// BUG FIX (backlog #2): the old <input list="..."> datalist would not
+// reliably reopen once a value was already typed/selected — you had
+// to clear the text first. This is a real dropdown: clicking or
+// focusing the input always reopens the (filtered) list, selecting an
+// item fills the input and closes it, and clicking elsewhere closes it.
+let restockStockItems = [];
 function populateStockDatalist(){
-  const items = (barData.stock||[]).map(s=>s.item);
-  document.getElementById('stockItemList').innerHTML = items.map(i=>`<option value="${i}">`).join('');
+  restockStockItems = (barData.stock||[]).map(s=>s.item);
+  renderRestockCombo(document.getElementById('restockItem').value || '');
+
+  const multiSel = document.getElementById('restockMultiSelect');
+  if(multiSel){
+    const prevSelected = new Set(Array.from(multiSel.selectedOptions).map(o=>o.value));
+    multiSel.innerHTML = restockStockItems.map(i => `<option value="${i}"${prevSelected.has(i)?' selected':''}>${i}</option>`).join('');
+  }
 }
+function toggleRestockMulti(){
+  const on = document.getElementById('restockMultiToggle').checked;
+  document.getElementById('restockMultiBox').style.display = on ? '' : 'none';
+  document.getElementById('restockItem').disabled = on;
+  document.getElementById('restockItem').placeholder = on ? 'Using the multi-item list below instead' : 'Item name (must match Bar Stock exactly)';
+}
+function renderRestockCombo(query){
+  const listEl = document.getElementById('restockItemComboList');
+  const q = (query||'').toLowerCase();
+  const matches = restockStockItems.filter(i => i.toLowerCase().includes(q));
+  if(matches.length === 0){
+    listEl.innerHTML = '<div class="combo-empty">No matching stock items</div>';
+  }else{
+    listEl.innerHTML = matches.slice(0,60).map(i => `<div class="combo-item" data-val="${i.replace(/"/g,'&quot;')}">${i}</div>`).join('');
+    listEl.querySelectorAll('.combo-item').forEach(el => {
+      el.addEventListener('mousedown', (e) => {
+        e.preventDefault(); // fires before the input's blur, so the click registers
+        document.getElementById('restockItem').value = el.dataset.val;
+        closeRestockCombo();
+      });
+    });
+  }
+  listEl.classList.add('show');
+}
+function closeRestockCombo(){
+  document.getElementById('restockItemComboList').classList.remove('show');
+}
+document.addEventListener('DOMContentLoaded', () => {
+  const input = document.getElementById('restockItem');
+  if(!input) return;
+  input.addEventListener('focus', () => renderRestockCombo(input.value));
+  input.addEventListener('click', () => renderRestockCombo(input.value)); // reopens even with existing text — this is the fix
+  input.addEventListener('input', () => renderRestockCombo(input.value));
+  document.addEventListener('click', (e) => {
+    if(!document.getElementById('restockItemComboWrap').contains(e.target)) closeRestockCombo();
+  });
+});
 
 let lastFoundCustomer = null;
 async function lookupCustomer(prefillQuery){
@@ -727,16 +874,40 @@ async function lookupCustomer(prefillQuery){
   if(!query){ resultEl.classList.remove('show'); return; }
   resultEl.classList.add('show');
   resultEl.innerHTML = 'Looking up...';
+
+  // GAP FIX: a customer created via a QR table/canteen order only
+  // exists in Supabase's bar_customers — the old Sheets-only lookup
+  // could never find them ("customer can't be found even though
+  // they're in the system"). Now checks Supabase first, then falls
+  // back to Sheets (where Quick Sell/walk-in customers still live).
+  try{
+    const { data: supaMatch, error: supaErr } = await supabaseClient.rpc('find_bar_customer', { p_query: query });
+    if(supaErr) throw new Error(supaErr.message);
+    if(supaMatch){
+      const { data: cust, error: custErr } = await supabaseClient.from('bar_customers').select('*').eq('customer_id', supaMatch).single();
+      if(custErr) throw new Error(custErr.message);
+      lastFoundCustomer = {
+        custId: cust.customer_id, name: cust.name, loyaltyPoints: cust.loyalty_points,
+        totalVisits: cust.total_visits, lastVisit: cust.last_visit ? new Date(cust.last_visit).toLocaleDateString('en-GB') : ''
+      };
+      resultEl.innerHTML = `<b>${lastFoundCustomer.custId}</b> — ${lastFoundCustomer.name}<br>Loyalty points: ${lastFoundCustomer.loyaltyPoints}<br>Total visits: ${lastFoundCustomer.totalVisits}<br>Last visit: ${lastFoundCustomer.lastVisit||'—'}<span style="display:block;margin-top:6px;color:var(--muted);font-size:11px">Registered via QR ordering (Supabase)</span><button class="btn" style="margin-top:10px" onclick="generateCustomerQR()">&#127915; GENERATE QR ID CARD</button>`;
+      return;
+    }
+  }catch(e){
+    console.log('Supabase customer lookup error:', e);
+    // fall through to the Sheets lookup below rather than failing outright
+  }
+
   try{
     const res = await fetch(API_URL + '?action=getCustomer&query=' + encodeURIComponent(query) + '&t=' + Date.now());
     if(!res.ok){ throw new Error('Server responded with status ' + res.status); }
     const data = await res.json();
     if(!data.success) throw new Error(data.error||'Lookup failed');
     if(!data.found){
-      resultEl.innerHTML = "No customer found matching that — they'll be registered next time they order.";
+      resultEl.innerHTML = "No customer found matching that (checked both QR-order members and Quick Sell members) — they'll be registered next time they order.";
     }else{
       lastFoundCustomer = data;
-      resultEl.innerHTML = `<b>${data.custId}</b> — ${data.name}<br>Loyalty points: ${data.loyaltyPoints}<br>Total visits: ${data.totalVisits}<br>Last visit: ${data.lastVisit||'—'}<br><button class="btn" style="margin-top:10px" onclick="generateCustomerQR()">&#127915; GENERATE QR ID CARD</button>`;
+      resultEl.innerHTML = `<b>${data.custId}</b> — ${data.name}<br>Loyalty points: ${data.loyaltyPoints}<br>Total visits: ${data.totalVisits}<br>Last visit: ${data.lastVisit||'—'}<span style="display:block;margin-top:6px;color:var(--muted);font-size:11px">Registered via Quick Sell (Google Sheets)</span><button class="btn" style="margin-top:10px" onclick="generateCustomerQR()">&#127915; GENERATE QR ID CARD</button>`;
     }
   }catch(e){
     resultEl.innerHTML = '<span style="color:var(--red)">Error: ' + (e.message||'connection failed') + '. See the yellow banner at the top of the page for the likely cause.</span>';
@@ -760,6 +931,7 @@ function generateCustomerQR(){
 }
 
 async function submitRestock(){
+  if(document.getElementById('restockMultiToggle').checked){ return submitRestockMulti(); }
   const item = document.getElementById('restockItem').value.trim();
   const qtyAdded = document.getElementById('restockQty').value;
   const parLevel = document.getElementById('restockPar').value;
@@ -769,13 +941,23 @@ async function submitRestock(){
   if(!item || !qtyAdded){ resultEl.innerHTML = '<span style="color:var(--red)">Item name and quantity are required.</span>'; return; }
   if(!restockedBy){ resultEl.innerHTML = '<span style="color:var(--red)">Pick who is restocking from the dropdown.</span>'; return; }
   resultEl.innerHTML = 'Saving...';
-  let url = API_URL + '?action=addBarStock&item=' + encodeURIComponent(item) + '&qtyAdded=' + encodeURIComponent(qtyAdded) + '&restockedBy=' + encodeURIComponent(restockedBy);
-  if(parLevel) url += '&parLevel=' + encodeURIComponent(parLevel);
-  if(costPerUnit) url += '&costPerUnit=' + encodeURIComponent(costPerUnit);
-  url += '&t=' + Date.now();
+
+  // SUPABASE MIGRATION: restocking now writes straight to bar_stock +
+  // restock_log via the restock_item() function, not Apps Script.
   const clientId = genClientId();
-  const label = `Restock: +${qtyAdded} ${item} (${restockedBy})`;
-  const result = await fetchOrQueue(url, 'restock', label, clientId);
+  let result;
+  try{
+    const { data, error } = await supabaseClient.rpc('restock_item', {
+      p_item: item, p_unit: null, p_qty_added: parseFloat(qtyAdded),
+      p_par_level: parLevel ? parseFloat(parLevel) : null, p_cost_per_unit: costPerUnit ? parseFloat(costPerUnit) : null,
+      p_restocked_by: restockedBy, p_client_id: clientId
+    });
+    if(error) throw new Error(error.message);
+    result = { ok: true, data: { newQty: data.new_qty, newItem: data.new_item, restockedBy: data.restocked_by, timestamp: new Date().toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit'}) } };
+  }catch(e){
+    result = { ok: false, error: e.message };
+  }
+
   if(result.ok){
     const data = result.data;
     resultEl.innerHTML = `<span class="flash">&#10003; ${item} — new qty: ${data.newQty}${data.newItem?' (new item created)':''} · logged under ${data.restockedBy} at ${data.timestamp}</span>`;
@@ -783,16 +965,57 @@ async function submitRestock(){
     document.getElementById('restockQty').value = '';
     document.getElementById('restockPar').value = '';
     document.getElementById('restockCost').value = '';
+    document.getElementById('restockItem').focus();
+    setTimeout(() => { if(resultEl.innerHTML.indexOf(item) !== -1) resultEl.innerHTML = ''; }, 6000);
     loadData();
-  }else if(result.queued){
-    resultEl.innerHTML = '<span style="color:var(--teal)">&#9203; ' + result.error + ' Meanwhile, you can restock directly in the Bar Stock sheet if this is urgent.</span>';
-    document.getElementById('restockItem').value = '';
-    document.getElementById('restockQty').value = '';
-    document.getElementById('restockPar').value = '';
-    document.getElementById('restockCost').value = '';
   }else{
     resultEl.innerHTML = '<span style="color:var(--red)">' + result.error + '</span>';
   }
+}
+
+async function submitRestockMulti(){
+  const multiSel = document.getElementById('restockMultiSelect');
+  const items = Array.from(multiSel.selectedOptions).map(o => o.value);
+  const qtyAdded = document.getElementById('restockQty').value;
+  const parLevel = document.getElementById('restockPar').value;
+  const costPerUnit = document.getElementById('restockCost').value;
+  const restockedBy = document.getElementById('restockBy').value;
+  const resultEl = document.getElementById('restockResult');
+  if(items.length === 0){ resultEl.innerHTML = '<span style="color:var(--red)">Pick at least one item from the list.</span>'; return; }
+  if(!qtyAdded){ resultEl.innerHTML = '<span style="color:var(--red)">Quantity is required.</span>'; return; }
+  if(!restockedBy){ resultEl.innerHTML = '<span style="color:var(--red)">Pick who is restocking from the dropdown.</span>'; return; }
+
+  const outcomes = [];
+  for(const item of items){
+    resultEl.innerHTML = `Saving ${outcomes.length+1} of ${items.length}: ${item}...`;
+    try{
+      const { data, error } = await supabaseClient.rpc('restock_item', {
+        p_item: item, p_unit: null, p_qty_added: parseFloat(qtyAdded),
+        p_par_level: parLevel ? parseFloat(parLevel) : null, p_cost_per_unit: costPerUnit ? parseFloat(costPerUnit) : null,
+        p_restocked_by: restockedBy, p_client_id: genClientId()
+      });
+      if(error) throw new Error(error.message);
+      outcomes.push({ item, ok: true });
+    }catch(e){
+      outcomes.push({ item, ok: false, error: e.message });
+    }
+  }
+
+  const okList = outcomes.filter(o => o.ok).map(o => o.item);
+  const failedList = outcomes.filter(o => !o.ok);
+
+  let html = '';
+  if(okList.length) html += `<div class="flash">&#10003; Restocked +${qtyAdded} each: ${okList.join(', ')}</div>`;
+  if(failedList.length) html += `<div style="color:var(--red)">Failed: ${failedList.map(o=>o.item+' — '+o.error).join(', ')}</div>`;
+  resultEl.innerHTML = html;
+
+  document.getElementById('restockQty').value = '';
+  document.getElementById('restockPar').value = '';
+  document.getElementById('restockCost').value = '';
+  document.getElementById('restockBy').value = '';
+  multiSel.selectedIndex = -1;
+  if(okList.length > 0) setTimeout(() => { resultEl.innerHTML = ''; }, 8000);
+  loadData();
 }
 
 let scannerStream = null;
@@ -1073,15 +1296,25 @@ async function submitQuickSellCart(){
   const lineResults = [];
   let firstError = null;
 
+  // SUPABASE MIGRATION: each cart line now calls quick_sell_item()
+  // directly instead of going through Apps Script — same one-call-
+  // per-item pattern as before, no offline queue (if there's no
+  // connection the call just fails and the item stays in the cart to
+  // retry, same as a failed line always has).
   for(const itemName of itemNames){
     const qty = cart[itemName];
-    let url = API_URL + '?action=quickSell&item=' + encodeURIComponent(itemName) + '&qty=' + encodeURIComponent(qty) + '&staffInitials=' + encodeURIComponent(staffInitials) + '&payment=' + encodeURIComponent(payment);
-    if(custQuery) url += '&custQuery=' + encodeURIComponent(custQuery);
-    if(newCustomerName) url += '&newCustomerName=' + encodeURIComponent(newCustomerName);
-    url += '&t=' + Date.now();
     const clientId = genClientId();
-    const label = `Sale: ${qty} x ${itemName} (${staffInitials})`;
-    const result = await fetchOrQueue(url, 'quickSell', label, clientId);
+    let result;
+    try{
+      const { data, error } = await supabaseClient.rpc('quick_sell_item', {
+        p_item: itemName, p_qty: qty, p_staff: staffInitials, p_payment: payment,
+        p_cust_query: custQuery || null, p_new_customer_name: newCustomerName || null, p_client_id: clientId
+      });
+      if(error) throw new Error(error.message);
+      result = { ok: true, data: { lineTotal: data.lineTotal, custId: data.custId, pointsNow: data.pointsNow, lowStockNames: data.lowStockNames || [] } };
+    }catch(e){
+      result = { ok: false, queued: false, error: e.message };
+    }
     lineResults.push({ itemName, qty, result });
     if(!result.ok && !result.queued && !firstError) firstError = result.error;
   }
