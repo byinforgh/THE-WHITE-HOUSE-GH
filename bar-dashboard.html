@@ -250,7 +250,10 @@ tr.low-row{background:#1a0a0a;}
 
   <div class="card" id="quickSellCard">
     <div class="card-title">&#9889; QUICK SELL <span style="font-weight:400;color:var(--muted);text-transform:none;letter-spacing:0">(ring up a sale without opening the sheet — tap items to add to cart)</span></div>
-    <input class="search-input" id="quickSellSearch" placeholder="Search menu items..." oninput="renderQuickSellMenu()">
+    <div style="display:flex;gap:8px;align-items:center;margin-bottom:10px">
+      <input class="search-input" id="quickSellSearch" placeholder="Search menu items..." oninput="renderQuickSellMenu()" style="margin-bottom:0;flex:1">
+      <button type="button" class="btn" style="width:auto;padding:10px 16px;margin:0" onclick="document.getElementById('quickSellSearch').value='';renderQuickSellMenu();">&#10005; CLEAR</button>
+    </div>
     <div class="tab-row" id="quickSellTabs"></div>
     <div class="quick-sell-grid" id="quickSellGrid"><div class="empty">Loading menu...</div></div>
     <div class="quick-sell-panel" id="quickSellPanel"></div>
@@ -287,8 +290,9 @@ tr.low-row{background:#1a0a0a;}
           <input type="checkbox" id="restockMultiToggle" onchange="toggleRestockMulti()"> Restock several items at once, all at the same quantity
         </label>
         <div id="restockMultiBox" style="display:none;margin-bottom:6px">
-          <select class="select-input" id="restockMultiSelect" multiple size="6" style="height:auto;padding:4px"></select>
-          <div style="font-size:11px;color:var(--muted);margin-top:4px">Ctrl/Cmd-click (desktop) or tap each item (mobile) to pick more than one. The item field above is ignored while this is on.</div>
+          <input class="search-input" id="restockMultiSearch" placeholder="Search to filter the list below..." oninput="renderRestockMultiList()" style="margin-bottom:8px">
+          <div id="restockMultiList" style="max-height:220px;overflow-y:auto;border:1px solid var(--border);border-radius:8px;background:var(--surface)"></div>
+          <div style="font-size:11px;color:var(--muted);margin-top:4px">Tap an item to select it, tap again to unselect — no Ctrl/Cmd needed. <span id="restockMultiCount">0 selected</span>. The item field above is ignored while this is on.</div>
         </div>
         <div class="restock-grid">
           <input class="search-input" id="restockQty" type="number" placeholder="Qty to add" style="margin:0">
@@ -300,6 +304,19 @@ tr.low-row{background:#1a0a0a;}
         </select>
         <button class="btn" onclick="submitRestock()">+ ADD STOCK</button>
         <div id="restockResult" style="margin-top:8px;font-size:12px"></div>
+      </div>
+      <div class="card">
+        <div class="card-title">&#129514; RESTOCK A COCKTAIL INGREDIENT <span style="font-weight:400;color:var(--muted);text-transform:none;letter-spacing:0">(pour ingredients only — Rum, Lime, Soda, etc. Unit is fixed per ingredient so oz and units can never get mixed up)</span></div>
+        <select class="select-input" id="ciItemSelect" onchange="onCocktailIngredientPicked()">
+          <option value="">Select ingredient...</option>
+        </select>
+        <div id="ciUnitHint" style="font-size:12px;color:var(--teal);margin:-4px 0 10px"></div>
+        <input class="search-input" id="ciQty" type="number" placeholder="Qty to add" style="margin-bottom:8px">
+        <input class="search-input" id="ciPar" type="number" placeholder="Par level (optional)" style="margin-bottom:8px">
+        <input class="search-input" id="ciCost" type="number" placeholder="Cost per unit (optional)">
+        <select class="select-input" id="ciRestockedBy"><option value="">Restocked by... (required)</option></select>
+        <button class="btn" onclick="submitCocktailIngredientRestock()">+ ADD INGREDIENT STOCK</button>
+        <div id="ciResult" style="margin-top:8px;font-size:12px"></div>
       </div>
     </div>
   </div>
@@ -334,7 +351,10 @@ tr.low-row{background:#1a0a0a;}
   <div class="card" id="stockCard">
     <div class="card-title">&#128230; BAR STOCK — ALL ITEMS <span style="font-weight:400;color:var(--muted);text-transform:none;letter-spacing:0">(red rows = at or below par level — click a tab to filter by category)</span></div>
     <div class="tab-row" id="stockTabs"></div>
-    <input class="search-input" id="stockSearch" placeholder="Search stock..." oninput="renderStock()">
+    <div style="display:flex;gap:8px;align-items:center;margin-bottom:10px">
+      <input class="search-input" id="stockSearch" placeholder="Search stock..." oninput="renderStock()" style="margin-bottom:0;flex:1">
+      <button type="button" class="btn" style="width:auto;padding:10px 16px;margin:0" onclick="document.getElementById('stockSearch').value='';renderStock();">&#10005; CLEAR</button>
+    </div>
     <div class="scroll-table"><table><thead><tr><th>ITEM</th><th>CATEGORY</th><th>UNIT</th><th>CURRENT QTY</th><th>PAR LEVEL</th><th>COST/UNIT</th><th>LAST RESTOCKED</th><th>BY</th></tr></thead><tbody id="stockBody"></tbody></table></div>
   </div>
 </div>
@@ -360,6 +380,12 @@ const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBh
 const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
 const API_URL = 'https://script.google.com/macros/s/AKfycbyycYKCEtRchk0eToXIlMLgs3RmWIsKuUppD3UprPO8zLi9N5a9PIgn9uN4IKeip24E/exec';
+
+// v5.8: paste in the /exec URL of the Master Customer System deployment
+// (the SEPARATE Apps Script project bound to "THE WHITE HOUSE EVENTS &
+// MORE CUSTOMER DATABASE" sheet, Sheet ID 1mwQnXiBavINsCr0wn4HstjSCC_AmvEBwTG3-yjl_kw8).
+// Deploy > Manage deployments on that project to get its /exec URL.
+const MASTER_API_URL = 'PASTE_YOUR_MASTER_CUSTOMER_SYSTEM_EXEC_URL_HERE';
 
 // v5.7: bumped to match BarSystem_Code.gs v5.7 (Search & Sell sheet's
 // payment dropdown trimmed to Cash/MoMo only). MUST match
@@ -602,6 +628,7 @@ async function loadData(){
     renderRestockLog();
     populateStaffDropdowns();
     populateStockDatalist();
+    loadCocktailIngredients();
     renderQuickSellTabs();
     renderQuickSellMenu();
     renderQuickSellPanel();
@@ -733,7 +760,9 @@ function renderStock(){
   let stock = (barData.stock||[]).map(s => ({...s, category: (s.category && s.category !== 'undefined') ? s.category : 'Bar Ingredient'}));
   if(activeStockCategory === 'Low Stock'){
     stock = stock.filter(s=>s.lowStock);
-  } else if(activeStockCategory !== 'All'){
+  } else if(activeStockCategory !== 'All' && !q){
+    // v5.8: once you start typing, search the whole stock list —
+    // don't stay locked to whichever category tab was active.
     stock = stock.filter(s=>s.category === activeStockCategory);
   }
   stock = stock.filter(s=>!q||s.item.toLowerCase().includes(q));
@@ -819,17 +848,38 @@ function populateStockDatalist(){
   restockStockItems = (barData.stock||[]).map(s=>s.item);
   renderRestockCombo(document.getElementById('restockItem').value || '');
 
-  const multiSel = document.getElementById('restockMultiSelect');
-  if(multiSel){
-    const prevSelected = new Set(Array.from(multiSel.selectedOptions).map(o=>o.value));
-    multiSel.innerHTML = restockStockItems.map(i => `<option value="${i}"${prevSelected.has(i)?' selected':''}>${i}</option>`).join('');
-  }
+  renderRestockMultiList();
+}
+// v5.8: click-based multi-select replaces the native <select multiple>,
+// which needed Ctrl/Cmd-click on desktop and simply doesn't work as a
+// multi-pick gesture on most mobile browsers.
+let restockMultiSelected = new Set();
+function renderRestockMultiList(){
+  const listEl = document.getElementById('restockMultiList');
+  if(!listEl) return;
+  const q = (document.getElementById('restockMultiSearch')?.value || '').toLowerCase();
+  const items = restockStockItems.filter(i => i.toLowerCase().includes(q));
+  if(items.length === 0){ listEl.innerHTML = '<div style="padding:10px;color:var(--muted);font-size:12px">No matching items</div>'; return; }
+  listEl.innerHTML = items.map(i => `<div class="combo-item restock-multi-row" data-val="${i.replace(/"/g,'&quot;')}" style="${restockMultiSelected.has(i)?'background:#221f16;color:var(--gold);font-weight:700':''}">${restockMultiSelected.has(i)?'&#10003; ':''}${i}</div>`).join('');
+  listEl.querySelectorAll('.restock-multi-row').forEach(el => {
+    el.addEventListener('click', () => {
+      const v = el.dataset.val;
+      if(restockMultiSelected.has(v)) restockMultiSelected.delete(v); else restockMultiSelected.add(v);
+      renderRestockMultiList();
+    });
+  });
+  const countEl = document.getElementById('restockMultiCount');
+  if(countEl) countEl.textContent = restockMultiSelected.size + ' selected';
 }
 function toggleRestockMulti(){
   const on = document.getElementById('restockMultiToggle').checked;
   document.getElementById('restockMultiBox').style.display = on ? '' : 'none';
   document.getElementById('restockItem').disabled = on;
   document.getElementById('restockItem').placeholder = on ? 'Using the multi-item list below instead' : 'Item name (must match Bar Stock exactly)';
+  // v5.8: force the single-item dropdown fully shut when switching to
+  // multi mode, so it can't stay open/reappear on its own.
+  if(on) closeRestockCombo();
+  else renderRestockMultiList();
 }
 function renderRestockCombo(query){
   const listEl = document.getElementById('restockItemComboList');
@@ -904,7 +954,9 @@ async function lookupCustomer(prefillQuery){
     const data = await res.json();
     if(!data.success) throw new Error(data.error||'Lookup failed');
     if(!data.found){
-      resultEl.innerHTML = "No customer found matching that (checked both QR-order members and Quick Sell members) — they'll be registered next time they order.";
+      // v5.8: not in Supabase or the bar Sheet — check the Master
+      // Customer database before giving up.
+      await lookupMasterCustomer(query, resultEl);
     }else{
       lastFoundCustomer = data;
       resultEl.innerHTML = `<b>${data.custId}</b> — ${data.name}<br>Loyalty points: ${data.loyaltyPoints}<br>Total visits: ${data.totalVisits}<br>Last visit: ${data.lastVisit||'—'}<span style="display:block;margin-top:6px;color:var(--muted);font-size:11px">Registered via Quick Sell (Google Sheets)</span><button class="btn" style="margin-top:10px" onclick="generateCustomerQR()">&#127915; GENERATE QR ID CARD</button>`;
@@ -912,6 +964,30 @@ async function lookupCustomer(prefillQuery){
   }catch(e){
     resultEl.innerHTML = '<span style="color:var(--red)">Error: ' + (e.message||'connection failed') + '. See the yellow banner at the top of the page for the likely cause.</span>';
     showApiError(e.message || 'Customer lookup failed.');
+  }
+}
+
+// v5.8: the Master Customer Database is the business-wide list
+// (bookings, landing-page sign-ups, VIP status) — checked last since
+// it's a separate Apps Script project from the bar system.
+async function lookupMasterCustomer(query, resultEl){
+  if(!MASTER_API_URL || MASTER_API_URL.indexOf('PASTE_YOUR') !== -1){
+    resultEl.innerHTML = "No customer found matching that (checked Supabase and the bar Sheet) — they'll be registered next time they order. <span style='color:var(--muted)'>(Master Customer lookup isn't wired up yet — see MASTER_API_URL near the top of the script.)</span>";
+    return;
+  }
+  try{
+    const res = await fetch(MASTER_API_URL + '?action=searchCustomer&query=' + encodeURIComponent(query) + '&t=' + Date.now());
+    const data = await res.json();
+    if(!data.success) throw new Error(data.error || 'Lookup failed');
+    if(!data.found){
+      resultEl.innerHTML = "No customer found matching that (checked Supabase, the bar Sheet, and the Master Customer database) — they'll be registered next time they order.";
+      return;
+    }
+    const c = data.customer;
+    lastFoundCustomer = { custId: c.custId, name: c.fullName, loyaltyPoints: c.totalPoints, totalVisits: c.totalVisits, lastVisit: c.lastActivity };
+    resultEl.innerHTML = `<b>${c.custId}</b> — ${c.fullName}<br>Membership: ${c.membershipStatus||'Regular'}<br>Points: ${c.totalPoints}<br>Total visits: ${c.totalVisits}<br>Last activity: ${c.lastActivity||'—'}<span style="display:block;margin-top:6px;color:var(--muted);font-size:11px">Found in the Master Customer Database</span><button class="btn" style="margin-top:10px" onclick="generateCustomerQR()">&#127915; GENERATE QR ID CARD</button>`;
+  }catch(e){
+    resultEl.innerHTML = "No customer found matching that (checked Supabase and the bar Sheet; the Master Customer database could not be reached — " + e.message + ")";
   }
 }
 
@@ -973,9 +1049,59 @@ async function submitRestock(){
   }
 }
 
+let cocktailIngredients = [];
+async function loadCocktailIngredients(){
+  try{
+    const { data, error } = await supabaseClient.from('cocktail_ingredients').select('*').order('item');
+    if(error) throw new Error(error.message);
+    cocktailIngredients = data || [];
+    const sel = document.getElementById('ciItemSelect');
+    if(sel){
+      const current = sel.value;
+      sel.innerHTML = '<option value="">Select ingredient...</option>' + cocktailIngredients.map(i=>`<option value="${i.item}">${i.item} (${i.unit})</option>`).join('');
+      if(cocktailIngredients.some(i=>i.item===current)) sel.value = current;
+    }
+    const bySel = document.getElementById('ciRestockedBy');
+    if(bySel){
+      const staff = (barData.staff||[]).filter(s=>s.initials && s.initials.trim());
+      const current = bySel.value;
+      bySel.innerHTML = '<option value="">Restocked by... (required)</option>' + staff.map(s => `<option value="${s.initials}">${s.initials}${s.name?' — '+s.name:''}</option>`).join('');
+      if(staff.some(s=>s.initials===current)) bySel.value = current;
+    }
+  }catch(e){ console.log('loadCocktailIngredients error:', e); }
+}
+function onCocktailIngredientPicked(){
+  const name = document.getElementById('ciItemSelect').value;
+  const item = cocktailIngredients.find(i=>i.item===name);
+  document.getElementById('ciUnitHint').textContent = item ? ('Unit for this ingredient is fixed: ' + item.unit + ' — enter the quantity to add in ' + item.unit + '.') : '';
+}
+async function submitCocktailIngredientRestock(){
+  const item = document.getElementById('ciItemSelect').value;
+  const qty = document.getElementById('ciQty').value;
+  const par = document.getElementById('ciPar').value;
+  const cost = document.getElementById('ciCost').value;
+  const restockedBy = document.getElementById('ciRestockedBy').value;
+  const resultEl = document.getElementById('ciResult');
+  if(!item || !qty){ resultEl.innerHTML = '<span style="color:var(--red)">Pick an ingredient and enter a quantity.</span>'; return; }
+  if(!restockedBy){ resultEl.innerHTML = '<span style="color:var(--red)">Pick who is restocking.</span>'; return; }
+  resultEl.innerHTML = 'Saving...';
+  try{
+    const { data, error } = await supabaseClient.rpc('restock_cocktail_ingredient', {
+      p_item: item, p_qty_added: parseFloat(qty),
+      p_par_level: par ? parseFloat(par) : null, p_cost_per_unit: cost ? parseFloat(cost) : null,
+      p_restocked_by: restockedBy, p_client_id: genClientId()
+    });
+    if(error) throw new Error(error.message);
+    resultEl.innerHTML = `<span class="flash">&#10003; ${item} — new qty: ${data.new_qty} ${data.unit||''}, logged under ${restockedBy}</span>`;
+    document.getElementById('ciQty').value = ''; document.getElementById('ciPar').value = ''; document.getElementById('ciCost').value = '';
+    setTimeout(()=>{ if(resultEl.innerHTML.indexOf(item)!==-1) resultEl.innerHTML=''; }, 6000);
+  }catch(e){
+    resultEl.innerHTML = '<span style="color:var(--red)">' + e.message + '</span>';
+  }
+}
+
 async function submitRestockMulti(){
-  const multiSel = document.getElementById('restockMultiSelect');
-  const items = Array.from(multiSel.selectedOptions).map(o => o.value);
+  const items = Array.from(restockMultiSelected);
   const qtyAdded = document.getElementById('restockQty').value;
   const parLevel = document.getElementById('restockPar').value;
   const costPerUnit = document.getElementById('restockCost').value;
@@ -1013,7 +1139,8 @@ async function submitRestockMulti(){
   document.getElementById('restockPar').value = '';
   document.getElementById('restockCost').value = '';
   document.getElementById('restockBy').value = '';
-  multiSel.selectedIndex = -1;
+  restockMultiSelected.clear();
+  renderRestockMultiList();
   if(okList.length > 0) setTimeout(() => { resultEl.innerHTML = ''; }, 8000);
   loadData();
 }
@@ -1098,8 +1225,14 @@ function setQuickSellCategory(cat){
 function renderQuickSellMenu(){
   const q = (document.getElementById('quickSellSearch').value||'').toLowerCase();
   let menu = barData.menu || [];
-  if(quickSellCategory !== 'All') menu = menu.filter(m => (m.category||'Other') === quickSellCategory);
-  if(q) menu = menu.filter(m => m.item.toLowerCase().includes(q));
+  if(q){
+    // v5.8: typing a search term searches the WHOLE menu, regardless
+    // of which category tab happens to be selected. The category tab
+    // only applies when the search box is empty.
+    menu = menu.filter(m => m.item.toLowerCase().includes(q));
+  } else if(quickSellCategory !== 'All'){
+    menu = menu.filter(m => (m.category||'Other') === quickSellCategory);
+  }
   const grid = document.getElementById('quickSellGrid');
   grid.innerHTML = '';
   if(menu.length===0){ grid.innerHTML = '<div class="empty">No menu items match</div>'; return; }
