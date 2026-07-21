@@ -197,7 +197,10 @@ td{padding:7px 10px;border-bottom:1px solid #1a1a1a;}
 
   <div class="card" id="quickSellCard">
     <div class="card-title">&#9889; QUICK SELL <span style="font-weight:400;color:var(--muted);text-transform:none;letter-spacing:0">(ring up a walk-up food sale — tap items to add to cart)</span></div>
-    <input class="search-input" id="quickSellSearch" placeholder="Search food menu..." oninput="renderQuickSellMenu()">
+    <div style="display:flex;gap:8px;align-items:center;margin-bottom:10px">
+      <input class="search-input" id="quickSellSearch" placeholder="Search food menu..." oninput="renderQuickSellMenu()" style="margin-bottom:0;flex:1">
+      <button type="button" class="btn" style="width:auto;padding:10px 16px;margin:0" onclick="document.getElementById('quickSellSearch').value='';renderQuickSellMenu();">&#10005; CLEAR</button>
+    </div>
     <div class="tab-row" id="quickSellTabs"></div>
     <div class="quick-sell-grid" id="quickSellGrid"><div class="empty">Loading menu...</div></div>
     <div class="quick-sell-panel" id="quickSellPanel"></div>
@@ -711,8 +714,11 @@ function renderQuickSellTabs(){
 function renderQuickSellMenu(){
   const q = (document.getElementById('quickSellSearch').value||'').toLowerCase();
   let items = foodMenu;
-  if(quickSellCategory !== 'All') items = items.filter(m => (m.category||'Other') === quickSellCategory);
-  if(q) items = items.filter(m => m.item.toLowerCase().includes(q));
+  if(q){
+    items = items.filter(m => m.item.toLowerCase().includes(q));
+  } else if(quickSellCategory !== 'All'){
+    items = items.filter(m => (m.category||'Other') === quickSellCategory);
+  }
   const grid = document.getElementById('quickSellGrid');
   grid.innerHTML = '';
   if(items.length===0){ grid.innerHTML = '<div class="empty">No menu items match</div>'; return; }
