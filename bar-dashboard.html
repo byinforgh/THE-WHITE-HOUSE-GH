@@ -279,9 +279,14 @@ tr.low-row{background:#1a0a0a;}
           <div style="font-size:11px;color:var(--muted);margin-top:4px">Tap an item to select it, tap again to unselect — no Ctrl/Cmd needed. <span id="restockMultiCount">0 selected</span>. The item field above is ignored while this is on.</div>
         </div>
         <div class="restock-grid">
-          <input class="search-input" id="restockQty" type="number" placeholder="Qty to add" style="margin:0">
+          <input class="search-input" id="restockQty" type="number" placeholder="Qty to add (singles)" style="margin:0">
           <input class="search-input" id="restockPar" type="number" placeholder="Par level (optional)" style="margin:0">
         </div>
+        <div class="restock-grid">
+          <input class="search-input" id="restockPacks" type="number" placeholder="OR: packs/crates to add" style="margin:0">
+          <input class="search-input" id="restockUnitsPerPack" type="number" placeholder="Units per pack (set once)" style="margin:0">
+        </div>
+        <input class="search-input" id="restockPackLabel" placeholder="Pack label, e.g. Case of 24 (optional)">
         <input class="search-input" id="restockCost" type="number" placeholder="Cost per unit (optional)">
         <select class="select-input" id="restockBy">
           <option value="">Restocked by... (required)</option>
@@ -326,7 +331,7 @@ tr.low-row{background:#1a0a0a;}
       <input class="search-input" id="stockSearch" placeholder="Search stock..." oninput="renderStock()" style="margin-bottom:0;flex:1">
       <button type="button" class="btn" style="width:auto;padding:10px 16px;margin:0" onclick="document.getElementById('stockSearch').value='';renderStock();">&#10005; CLEAR</button>
     </div>
-    <div class="scroll-table"><table><thead><tr><th>ITEM</th><th>CATEGORY</th><th>UNIT</th><th>CURRENT QTY</th><th>PAR LEVEL</th><th>COST/UNIT</th><th>LAST RESTOCKED</th><th>BY</th></tr></thead><tbody id="stockBody"></tbody></table></div>
+    <div class="scroll-table"><table><thead><tr><th>ITEM</th><th>CATEGORY</th><th>UNIT</th><th>CURRENT QTY</th><th>PACK SIZE</th><th>PAR LEVEL</th><th>COST/UNIT</th><th>LAST RESTOCKED</th><th>BY</th></tr></thead><tbody id="stockBody"></tbody></table></div>
   </div>
 </div>
 
@@ -495,7 +500,7 @@ async function loadSupabaseBarData(){
   const stock = stockRes.data.map(s => ({
     item: s.item, unit: s.unit || 'unit', currentQty: parseFloat(s.current_qty)||0, parLevel: parseFloat(s.par_level)||0,
     costPerUnit: parseFloat(s.cost_per_unit)||0, lastRestocked: s.last_restocked ? new Date(s.last_restocked).toLocaleString('en-GB') : '',
-    lastRestockedBy: s.last_restocked_by || '', unitsPerPack: 0, packLabel: '',
+    lastRestockedBy: s.last_restocked_by || '', unitsPerPack: parseFloat(s.units_per_pack)||0, packLabel: s.pack_label || '',
     lowStock: (parseFloat(s.current_qty)||0) <= (parseFloat(s.par_level)||0),
     category: categoryMap[(s.item||'').trim().toLowerCase()] || 'Bar Ingredient'
   }));
@@ -582,10 +587,10 @@ async function loadData(){
 
 function renderMetrics(){
   document.getElementById('topMetrics').innerHTML = `
-    <div class="metric-card gold" onclick="toggleMetric('revenue')">
-      <div class="metric-label">TODAY'S REVENUE <span class="metric-caret">&#9660;</span></div>
-      <div class="metric-value">&#8373;${(barData.todayRevenue||0).toFixed(2)}</div>
-      <div class="metric-sub">${(barData.todayItemCount||0)} items sold</div>
+    <div class="metric-card gold" onclick="window.open('revenue.html','_blank')" style="cursor:pointer">
+      <div class="metric-label">REVENUE &amp; REPORTS <span class="metric-caret">&#128274;</span></div>
+      <div class="metric-value" style="font-size:15px;line-height:1.3">Password protected</div>
+      <div class="metric-sub">Tap to open in a new tab</div>
     </div>
     <div class="metric-card teal" onclick="toggleMetric('orders')">
       <div class="metric-label">ORDERS TODAY <span class="metric-caret">&#9660;</span></div>
@@ -705,13 +710,14 @@ function renderStock(){
     stock = stock.filter(s=>s.category === activeStockCategory);
   }
   stock = stock.filter(s=>!q||s.item.toLowerCase().includes(q));
-  if(stock.length===0){ document.getElementById('stockBody').innerHTML = '<tr><td colspan="8" class="empty">No stock items match</td></tr>'; return; }
+  if(stock.length===0){ document.getElementById('stockBody').innerHTML = '<tr><td colspan="9" class="empty">No stock items match</td></tr>'; return; }
   document.getElementById('stockBody').innerHTML = stock.map(s=>`
     <tr class="${s.lowStock?'low-row':''}">
       <td>${s.item}</td>
       <td class="badge-unit">${s.category}</td>
       <td class="badge-unit">${s.unit}</td>
       <td style="font-family:'Space Mono',monospace">${s.currentQty}</td>
+      <td class="badge-unit">${s.unitsPerPack ? Math.floor(s.currentQty/s.unitsPerPack)+' '+(s.packLabel||'packs')+' + '+(s.currentQty%s.unitsPerPack) : '—'}</td>
       <td style="font-family:'Space Mono',monospace">${s.parLevel}</td>
       <td style="font-family:'Space Mono',monospace">&#8373;${s.costPerUnit.toFixed(2)}</td>
       <td style="font-size:11px;color:var(--text-dim)">${s.lastRestocked||'—'}</td>
@@ -917,17 +923,23 @@ async function submitRestock(){
   const costPerUnit = document.getElementById('restockCost').value;
   const restockedBy = document.getElementById('restockBy').value;
   const resultEl = document.getElementById('restockResult');
-  if(!item || !qtyAdded){ resultEl.innerHTML = '<span style="color:var(--red)">Item name and quantity are required.</span>'; return; }
+  if(!item || (!qtyAdded && !document.getElementById('restockPacks').value)){ resultEl.innerHTML = '<span style="color:var(--red)">Item name and a quantity (singles or packs) are required.</span>'; return; }
   if(!restockedBy){ resultEl.innerHTML = '<span style="color:var(--red)">Pick who is restocking from the dropdown.</span>'; return; }
   resultEl.innerHTML = 'Saving...';
 
   const clientId = genClientId();
   let result;
   try{
+    const packs = document.getElementById('restockPacks').value;
+    const unitsPerPack = document.getElementById('restockUnitsPerPack').value;
+    const packLabel = document.getElementById('restockPackLabel').value.trim();
     const { data, error } = await supabaseClient.rpc('restock_item', {
-      p_item: item, p_unit: null, p_qty_added: parseFloat(qtyAdded),
+      p_item: item, p_unit: null, p_qty_added: qtyAdded ? parseFloat(qtyAdded) : null,
       p_par_level: parLevel ? parseFloat(parLevel) : null, p_cost_per_unit: costPerUnit ? parseFloat(costPerUnit) : null,
-      p_restocked_by: restockedBy, p_client_id: clientId
+      p_restocked_by: restockedBy, p_client_id: clientId,
+      p_packs: packs ? parseFloat(packs) : null,
+      p_units_per_pack: unitsPerPack ? parseFloat(unitsPerPack) : null,
+      p_pack_label: packLabel || null
     });
     if(error) throw new Error(error.message);
     result = { ok: true, data: { newQty: data.new_qty, newItem: data.new_item, restockedBy: data.restocked_by, timestamp: new Date().toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit'}) } };
@@ -942,6 +954,9 @@ async function submitRestock(){
     document.getElementById('restockQty').value = '';
     document.getElementById('restockPar').value = '';
     document.getElementById('restockCost').value = '';
+    document.getElementById('restockPacks').value = '';
+    document.getElementById('restockUnitsPerPack').value = '';
+    document.getElementById('restockPackLabel').value = '';
     document.getElementById('restockItem').focus();
     setTimeout(() => { if(resultEl.innerHTML.indexOf(item) !== -1) resultEl.innerHTML = ''; }, 6000);
     loadData();
@@ -1329,7 +1344,7 @@ async function submitQuickSellCart(){
   }
 }
 
-function generateShiftSummary(){
+async function generateShiftSummary(){
   const orders = barData.todayOrders || [];
   const el = document.getElementById('shiftSummaryBody');
   if(orders.length === 0){
@@ -1367,6 +1382,17 @@ Top items today:
 ${topItems.map(i=>`  ${i.item}: ${i.qty} sold — GHS ${i.revenue.toFixed(2)}`).join('\n')}
 
 Low stock (${lowStock.length}):${lowStock.length ? '\n' + lowStock.map(s=>`  ${s.item}: ${s.currentQty}${s.unit} (par ${s.parLevel})`).join('\n') : ' none'}`;
+
+  try{
+    await supabaseClient.rpc('save_shift_summary', {
+      p_business_date: new Date().toISOString().slice(0,10),
+      p_generated_by: 'Bar Dashboard',
+      p_summary_text: window._shiftSummaryText,
+      p_total_revenue: totalRevenue,
+      p_items_sold: totalItems,
+      p_orders_count: orders.length
+    });
+  }catch(e){ console.log('Could not save shift summary to archive:', e); }
 
   el.innerHTML = `
     <div class="shift-summary-box">
