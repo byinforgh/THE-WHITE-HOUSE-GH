@@ -34,8 +34,6 @@
   p.sub{ color:var(--muted); font-size:13px; line-height:1.5; margin:0 0 20px;}
   label{ display:block; font-size:11px; text-transform:uppercase; letter-spacing:1px; color:var(--gold); margin:16px 0 6px; }
   label.req::after{ content:" *"; color:var(--teal); }
-  /* v1.1: font-size raised from 15px to 16px — iOS Safari auto-zooms
-     the page when focusing any input under 16px. */
   input[type=text], input[type=tel], input[type=email], select, textarea{
     width:100%; background:#1c1a15; border:1px solid var(--line); color:var(--text);
     font-family:'Space Mono',monospace; font-size:16px; padding:14px; border-radius:10px; outline:none;
@@ -178,12 +176,25 @@
   </form>
 </div>
 
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script>
 /* =========================================================
    CONFIG
+   SUPABASE MIGRATION: this page used to POST to a separate Master
+   Customer System Apps Script project, which wrote to its own
+   "Master Customers" Google Sheet — a second, unsynced customer
+   store from the one order.html/bar-dashboard.html use (Supabase
+   bar_customers). That caused the same person to exist as two
+   different records with two different point balances. This page now
+   writes straight to bar_customers via register_customer_full(),
+   the same table and the same customer ID every other page reads —
+   one customer base, not two.
    ========================================================= */
+const SUPABASE_URL = 'https://crvuzkyfrqbfmamegxjx.supabase.co';
+const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNydnV6a3lmcnFiZm1hbWVneGp4Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODQ0MzI5NjQsImV4cCI6MjEwMDAwODk2NH0.gMsv3yvw6plDCherA2YdU4UgWRMXUc9H1Hr_IdR9GxA';
+const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
 const CONFIG = {
-  GAS_URL: "https://script.google.com/macros/s/AKfycbyyGLRGOhHrtT_zXj-99tW8Cbril7OZcygt5oiiS5NApxtsYLUt3bDA5b8W2LbjQpFrNw/exec",
   WHATSAPP_NUMBER: "233509960980" // no leading zero, no +
 };
 
@@ -280,27 +291,26 @@ async function submitRegistration(){
   const btn = document.getElementById('submitBtn'), spinner = document.getElementById('spinner'), label = document.getElementById('submitLabel');
   btn.disabled = true; spinner.style.display='inline-block'; label.textContent='Submitting...';
 
-  const payload = {
-    action: 'registerCustomer',
-    fullName: document.getElementById('fullName').value.trim(),
-    businessName: document.getElementById('businessName').value.trim(),
-    phone: document.getElementById('phone').value.trim(),
-    whatsapp: document.getElementById('whatsapp').value.trim(),
-    email: document.getElementById('email').value.trim(),
-    address: document.getElementById('address').value.trim(),
-    service: state.service.join(', '),
-    howHeard: state.howHeard.join(', '),
-    suggestions: document.getElementById('suggestions').value.trim(),
-    followedSocials: state.socials.join(', '),
-    source: 'Landing Page — QR / Direct'
-  };
-  const qs = Object.entries(payload).map(([k,v])=>k+'='+encodeURIComponent(v)).join('&');
-
+  // SUPABASE MIGRATION: writes straight to bar_customers via
+  // register_customer_full() — the same table order.html and
+  // bar-dashboard.html already use. No second customer store.
   let result = null;
   try{
-    const res = await fetch(CONFIG.GAS_URL + '?' + qs);
-    result = await res.json();
-    if(!result.success) throw new Error(result.error || 'Unknown error');
+    const { data, error } = await supabaseClient.rpc('register_customer_full', {
+      p_full_name: document.getElementById('fullName').value.trim(),
+      p_business_name: document.getElementById('businessName').value.trim() || null,
+      p_phone: document.getElementById('phone').value.trim(),
+      p_whatsapp: document.getElementById('whatsapp').value.trim() || null,
+      p_email: document.getElementById('email').value.trim() || null,
+      p_address: document.getElementById('address').value.trim() || null,
+      p_service_interest: state.service.join(', ') || null,
+      p_how_heard: state.howHeard.join(', ') || null,
+      p_suggestions: document.getElementById('suggestions').value.trim() || null,
+      p_followed_socials: state.socials.join(', ') || null,
+      p_source: 'Landing Page — QR / Direct'
+    });
+    if(error) throw new Error(error.message);
+    result = { success: true, custId: data.custId, returning: data.returning, points: data.points, membershipStatus: data.membershipStatus };
   }catch(e){
     console.warn('Registration issue:', e);
     errEl.textContent = 'Could not save automatically — showing what we have, please also message us on WhatsApp.';
