@@ -36,8 +36,6 @@
 .contact-table th{text-align:left;padding:8px 10px;color:var(--muted);font-weight:700;letter-spacing:1px;border-bottom:1px solid var(--border);font-size:10px;}
 .contact-table td{padding:8px 10px;border-bottom:1px solid #1a1a1a;vertical-align:middle;}
 .contact-table tr:hover td{background:#1c1c1c;}
-/* v1.1 rebrand pass: input font-sizes raised to 16px — iOS Safari
-   auto-zooms the page when focusing any input under 16px. */
 .search-input{background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:10px 14px;color:var(--text);font-size:16px;font-family:'Syne',sans-serif;width:100%;margin-bottom:14px;outline:none;}.search-input:focus{border-color:var(--gold);}
 input[type=text],input[type=tel],input[type=number],select,textarea{background:var(--surface);border:1px solid var(--border);color:var(--text);padding:8px 12px;border-radius:5px;font-family:'Syne',sans-serif;font-size:16px;width:100%;outline:none;}
 select:focus,input:focus,textarea:focus{border-color:var(--gold);}
@@ -166,7 +164,7 @@ select:focus,input:focus,textarea:focus{border-color:var(--gold);}
   <div class="two-col">
     <div class="card">
       <div class="card-title">CURRENT REWARDS LIST</div>
-      <div style="font-size:11px;color:var(--text-dim);margin-bottom:12px">Edit names/points/active anytime directly in the "Rewards" sheet — changes show here on next refresh.</div>
+      <div style="font-size:11px;color:var(--text-dim);margin-bottom:12px">Edit names/points/active anytime directly in Supabase's "rewards" table — changes show here on next refresh.</div>
       <div id="rewardsList"></div>
     </div>
     <div class="card">
@@ -214,19 +212,26 @@ select:focus,input:focus,textarea:focus{border-color:var(--gold);}
 
 <div class="toast" id="toast"></div>
 
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script>
-const API_URL = 'https://script.google.com/macros/s/AKfycbyyGLRGOhHrtT_zXj-99tW8Cbril7OZcygt5oiiS5NApxtsYLUt3bDA5b8W2LbjQpFrNw/exec';
+/* SUPABASE MIGRATION: this dashboard used to read/write a separate
+   Master Customer System Apps Script + its own "Master Customers"
+   Google Sheet — a second, unsynced customer store from the one
+   order.html/bar-dashboard.html use. It now reads/writes the same
+   bar_customers table in Supabase everything else uses — one
+   customer base, not two. Points log, rewards, bookings, and
+   redemptions are now Supabase tables too (points_log, rewards,
+   bookings, redemptions). */
+const SUPABASE_URL = 'https://crvuzkyfrqbfmamegxjx.supabase.co';
+const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNydnV6a3lmcnFiZm1hbWVneGp4Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODQ0MzI5NjQsImV4cCI6MjEwMDAwODk2NH0.gMsv3yvw6plDCherA2YdU4UgWRMXUc9H1Hr_IdR9GxA';
+const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
-/* NOTE (rebrand): same caveat as registration.html — these URLs still
-   point at the old "thewhitehousegh" handles. Update them if/when
-   real accounts exist under the new name; left untouched rather than
-   guessed. */
 const FOOTER_LINKS = [
   { name:'TikTok',          url:'https://www.tiktok.com/@thewhitehousegh' },
   { name:'Instagram',       url:'https://www.instagram.com/thewhitehousegh' },
   { name:'Facebook',        url:'https://www.facebook.com/thewhitehousegh' },
   { name:'YouTube',         url:'https://www.youtube.com/@thewhitehousegh' },
-  { name:'WhatsApp Channel',url:'' }, // paste the channel invite link once you have it
+  { name:'WhatsApp Channel',url:'' },
   { name:'Website',         url:'https://www.thewhitehousegh.com' }
 ];
 
@@ -259,13 +264,45 @@ function switchTab(name, evt){
   if(name==='activity') renderActivityFull();
 }
 
+function shapeCustomer(r){
+  return {
+    custId: r.customer_id, fullName: r.name, businessName: r.business_name, phone: r.phone_number,
+    whatsapp: r.whatsapp, email: r.email, address: r.address, service: r.service_interest,
+    howHeard: r.how_heard, suggestions: r.suggestions, followedSocials: r.followed_socials,
+    source: r.source, registeredDate: r.first_visit ? new Date(r.first_visit).toLocaleDateString('en-GB') : '',
+    lastActivity: r.last_visit ? new Date(r.last_visit).toLocaleDateString('en-GB') : '',
+    totalVisits: r.total_visits, totalPoints: r.loyalty_points, lifetimePoints: r.lifetime_points,
+    notes: r.notes, membershipStatus: r.membership_status || 'Regular'
+  };
+}
+
 async function loadData(){
   document.getElementById('lastRefresh').textContent = 'Refreshing...';
   try{
-    const res = await fetch(API_URL + '?action=getMasterData&t=' + Date.now());
-    const data = await res.json();
-    if(!data.success) throw new Error(data.error || 'Unknown error');
-    state = data;
+    const [custRes, rewardsRes, pointsRes, bookingsRes, redemptionsRes] = await Promise.all([
+      supabaseClient.from('bar_customers').select('*').order('first_visit', { ascending: false }),
+      supabaseClient.from('rewards').select('*').eq('active', true),
+      supabaseClient.from('points_log').select('*').order('created_at', { ascending: false }).limit(60),
+      supabaseClient.from('bookings').select('*').order('created_at', { ascending: false }).limit(60),
+      supabaseClient.from('redemptions').select('*').order('created_at', { ascending: false }).limit(60)
+    ]);
+    [custRes, rewardsRes, pointsRes, bookingsRes, redemptionsRes].forEach(r => { if(r.error) throw new Error(r.error.message); });
+
+    const customers = custRes.data.map(shapeCustomer);
+    const todayStr = new Date().toLocaleDateString('en-GB');
+    state = {
+      customers,
+      totalCustomers: customers.length,
+      newToday: customers.filter(c => c.registeredDate === todayStr).length,
+      vipCount: customers.filter(c => c.membershipStatus === 'VIP').length,
+      vipRequests: customers.filter(c => (c.notes||'').indexOf('VIP REQUESTED') !== -1 && c.membershipStatus !== 'VIP')
+        .map(c => ({ custId: c.custId, name: c.fullName, phone: c.phone })),
+      leaderboard: customers.slice().sort((a,b)=>(b.totalPoints||0)-(a.totalPoints||0)).slice(0,50),
+      rewards: rewardsRes.data.map(r => ({ name: r.reward_name, points: r.points_required, category: r.category, active: r.active ? 'YES':'NO', notes: r.notes })),
+      pointsLog: pointsRes.data.map(p => ({ timestamp: new Date(p.created_at).toLocaleString('en-GB'), custId: p.customer_id, name: p.name, change: p.points_change, reason: p.reason, source: p.source, enteredBy: p.entered_by })),
+      bookings: bookingsRes.data.map(b => ({ timestamp: new Date(b.created_at).toLocaleString('en-GB'), custId: '', name: b.guest_name, phone: b.guest_phone, service: b.room_type, bookingDate: b.check_in, partySize: b.party_size, notes: b.notes, addedBy: '', source: b.source })),
+      redemptions: redemptionsRes.data.map(r => ({ timestamp: new Date(r.created_at).toLocaleString('en-GB'), custId: r.customer_id, name: r.name, reward: r.reward_name, pointsSpent: r.points_spent, givenBy: r.given_by, notes: r.notes }))
+    };
     document.getElementById('lastRefresh').textContent = 'Updated: ' + new Date().toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit'});
     renderToday();
     if(document.getElementById('tab-rewards').classList.contains('active')){ renderRewards(); renderVIPRequests(); }
@@ -316,7 +353,7 @@ function renderCustomers(){
       <td style="font-family:'Space Mono',monospace;color:var(--gold);font-size:11px">${c.custId}</td>
       <td><strong>${c.fullName}</strong>${c.businessName?'<br><span style="font-size:10px;color:var(--text-dim)">'+c.businessName+'</span>':''}</td>
       <td style="font-size:11px">${c.service||'—'}</td>
-      <td><span class="badge-source ${c.source==='Bar'?'src-bar':c.source&&c.source.indexOf('Bar')===0?'src-bar':'src-landing'}">${c.source||'—'}</span></td>
+      <td><span class="badge-source ${c.source==='Bar'?'src-bar':(c.source||'').indexOf('Bar')===0?'src-bar':'src-landing'}">${c.source||'—'}</span></td>
       <td>${membershipBadge(c.membershipStatus)}</td>
       <td style="text-align:center">${c.totalVisits||0}</td>
       <td class="pts">${c.totalPoints||0}</td>
@@ -381,23 +418,20 @@ async function submitMembershipStatus(){
   const result = document.getElementById('msResult');
   if(!custId){ result.innerHTML = '<span class="err-msg">Member ID or phone is required.</span>'; return; }
   result.innerHTML = '<span style="color:var(--muted)">Applying...</span>';
-  const payload = { action:'setMembershipStatus', custId, status, setBy:'Dashboard' };
-  const qs = Object.entries(payload).map(([k,v])=>k+'='+encodeURIComponent(v)).join('&');
   try{
-    const res = await fetch(API_URL+'?'+qs); const data = await res.json();
-    if(data.success){
-      result.innerHTML = '<span style="color:var(--green);font-weight:700">✓ '+data.custId+' is now '+data.membershipStatus+'</span>';
-      showToast(data.custId + ' set to ' + data.membershipStatus);
-      document.getElementById('msCustId').value = '';
-      loadData();
-    } else { result.innerHTML = '<span class="err-msg">'+(data.error||'Could not update')+'</span>'; }
-  }catch(e){ result.innerHTML = '<span class="err-msg">Connection error — try again</span>'; }
+    const { data, error } = await supabaseClient.rpc('set_customer_membership_status', { p_query: custId, p_status: status, p_set_by: 'Dashboard' });
+    if(error) throw new Error(error.message);
+    result.innerHTML = '<span style="color:var(--green);font-weight:700">✓ '+data.custId+' is now '+data.membershipStatus+'</span>';
+    showToast(data.custId + ' set to ' + data.membershipStatus);
+    document.getElementById('msCustId').value = '';
+    loadData();
+  }catch(e){ result.innerHTML = '<span class="err-msg">'+(e.message||'Could not update')+'</span>'; }
 }
 
 function renderRewards(){
   const rewards = (state.rewards||[]).filter(r => (r.active||'YES').toUpperCase()==='YES');
   document.getElementById('rewardsList').innerHTML = rewards.length ? rewards.map(r=>`
-    <div class="reward-item"><div><div style="font-weight:700;font-size:13px">${r.name}</div><div style="font-size:10px;color:var(--text-dim)">${r.category||'—'}</div></div><span class="pts">${r.points} pts</span></div>`).join('') : '<div class="empty">No active rewards — add rows to the Rewards sheet</div>';
+    <div class="reward-item"><div><div style="font-weight:700;font-size:13px">${r.name}</div><div style="font-size:10px;color:var(--text-dim)">${r.category||'—'}</div></div><span class="pts">${r.points} pts</span></div>`).join('') : '<div class="empty">No active rewards — add rows to the "rewards" table in Supabase</div>';
   document.getElementById('rdReward').innerHTML = rewards.map(r=>`<option value="${r.name}">${r.name} — ${r.points} pts</option>`).join('');
 }
 
@@ -433,25 +467,22 @@ async function submitBooking(){
   const result = document.getElementById('bkResult');
   if(!name || !phone){ result.innerHTML = '<span class="err-msg">Name and phone are required.</span>'; return; }
   result.innerHTML = '<span style="color:var(--muted)">Saving...</span>';
-  const payload = {
-    action: 'addBooking', name, phone,
-    service: document.getElementById('bkService').value,
-    bookingDate: document.getElementById('bkDate').value,
-    partySize: document.getElementById('bkParty').value,
-    notes: document.getElementById('bkNotes').value.trim(),
-    addedBy: document.getElementById('bkAddedBy').value.trim() || 'Dashboard',
-    source: 'Walk-In / Manual'
-  };
-  const qs = Object.entries(payload).map(([k,v])=>k+'='+encodeURIComponent(v)).join('&');
   try{
-    const res = await fetch(API_URL+'?'+qs); const data = await res.json();
-    if(data.success){
-      result.innerHTML = '<span style="color:var(--green);font-weight:700">✓ Booking added — '+data.custId+'</span>';
-      showToast('Booking added — '+data.custId);
-      ['bkName','bkPhone','bkParty','bkNotes'].forEach(id=>document.getElementById(id).value='');
-      loadData();
-    } else { result.innerHTML = '<span class="err-msg">'+(data.error||'Could not add')+'</span>'; }
-  }catch(e){ result.innerHTML = '<span class="err-msg">Connection error — try again</span>'; }
+    const { data, error } = await supabaseClient.rpc('add_customer_booking', {
+      p_name: name, p_phone: phone,
+      p_service: document.getElementById('bkService').value,
+      p_booking_date: document.getElementById('bkDate').value || null,
+      p_party_size: document.getElementById('bkParty').value || '',
+      p_notes: document.getElementById('bkNotes').value.trim() || null,
+      p_added_by: document.getElementById('bkAddedBy').value.trim() || 'Dashboard',
+      p_source: 'Walk-In / Manual'
+    });
+    if(error) throw new Error(error.message);
+    result.innerHTML = '<span style="color:var(--green);font-weight:700">✓ Booking added — '+data.custId+'</span>';
+    showToast('Booking added — '+data.custId);
+    ['bkName','bkPhone','bkParty','bkNotes'].forEach(id=>document.getElementById(id).value='');
+    loadData();
+  }catch(e){ result.innerHTML = '<span class="err-msg">'+(e.message||'Could not add')+'</span>'; }
 }
 
 async function submitRedeem(){
@@ -460,17 +491,18 @@ async function submitRedeem(){
   const result = document.getElementById('rdResult');
   if(!custId || !reward){ result.innerHTML = '<span class="err-msg">Member ID/phone and reward are required.</span>'; return; }
   result.innerHTML = '<span style="color:var(--muted)">Redeeming...</span>';
-  const payload = { action:'redeemReward', custId, reward, givenBy: document.getElementById('rdGivenBy').value.trim()||'Dashboard', notes: document.getElementById('rdNotes').value.trim() };
-  const qs = Object.entries(payload).map(([k,v])=>k+'='+encodeURIComponent(v)).join('&');
   try{
-    const res = await fetch(API_URL+'?'+qs); const data = await res.json();
-    if(data.success){
-      result.innerHTML = '<span style="color:var(--green);font-weight:700">✓ Redeemed — '+data.custId+' now has '+data.newTotal+' pts</span>';
-      showToast('Reward redeemed');
-      document.getElementById('rdCustId').value=''; document.getElementById('rdNotes').value='';
-      loadData();
-    } else { result.innerHTML = '<span class="err-msg">'+(data.error||'Could not redeem')+'</span>'; }
-  }catch(e){ result.innerHTML = '<span class="err-msg">Connection error — try again</span>'; }
+    const { data, error } = await supabaseClient.rpc('redeem_customer_reward', {
+      p_query: custId, p_reward_name: reward,
+      p_given_by: document.getElementById('rdGivenBy').value.trim()||'Dashboard',
+      p_notes: document.getElementById('rdNotes').value.trim() || null
+    });
+    if(error) throw new Error(error.message);
+    result.innerHTML = '<span style="color:var(--green);font-weight:700">✓ Redeemed — '+data.custId+' now has '+data.newTotal+' pts</span>';
+    showToast('Reward redeemed');
+    document.getElementById('rdCustId').value=''; document.getElementById('rdNotes').value='';
+    loadData();
+  }catch(e){ result.innerHTML = '<span class="err-msg">'+(e.message||'Could not redeem')+'</span>'; }
 }
 
 async function submitAdjustPoints(){
@@ -479,17 +511,17 @@ async function submitAdjustPoints(){
   const result = document.getElementById('apResult');
   if(!custId || !points){ result.innerHTML = '<span class="err-msg">Member ID/phone and a points value are required.</span>'; return; }
   result.innerHTML = '<span style="color:var(--muted)">Applying...</span>';
-  const payload = { action:'addPoints', custId, points, reason: document.getElementById('apReason').value.trim(), enteredBy:'Dashboard' };
-  const qs = Object.entries(payload).map(([k,v])=>k+'='+encodeURIComponent(v)).join('&');
   try{
-    const res = await fetch(API_URL+'?'+qs); const data = await res.json();
-    if(data.success){
-      result.innerHTML = '<span style="color:var(--green);font-weight:700">✓ '+data.custId+' now has '+data.newTotal+' pts</span>';
-      showToast('Points updated');
-      document.getElementById('apPoints').value=''; document.getElementById('apReason').value='';
-      loadData();
-    } else { result.innerHTML = '<span class="err-msg">'+(data.error||'Could not update')+'</span>'; }
-  }catch(e){ result.innerHTML = '<span class="err-msg">Connection error — try again</span>'; }
+    const { data, error } = await supabaseClient.rpc('add_customer_points', {
+      p_query: custId, p_points: parseFloat(points),
+      p_reason: document.getElementById('apReason').value.trim() || null, p_entered_by: 'Dashboard'
+    });
+    if(error) throw new Error(error.message);
+    result.innerHTML = '<span style="color:var(--green);font-weight:700">✓ '+data.custId+' now has '+data.newTotal+' pts</span>';
+    showToast('Points updated');
+    document.getElementById('apPoints').value=''; document.getElementById('apReason').value='';
+    loadData();
+  }catch(e){ result.innerHTML = '<span class="err-msg">'+(e.message||'Could not update')+'</span>'; }
 }
 
 loadData();
