@@ -1,34 +1,28 @@
 <!DOCTYPE html>
 <html lang="en">
 <!--
-  THE WHITE HOUSE EVENTS & MORE — BAR DASHBOARD (v5.6)
+  THE WHITE HOUSE EVENTS & MORE — BAR DASHBOARD (v5.9)
 
-  v5.6 CHANGES (paired with BarSystem_Code.gs v5.6):
-  - REBRAND: "The White House GH" -> "The White House Events & More"
-    in every user-facing label (title, header, shift summary text).
-  - PER-ORDER STAFF: the single header-level "acting as" dropdown is
-    gone. Each incoming order card now has its own staff select, so
-    when several orders come in at once each one can be assigned to
-    whoever is actually handling it. See orderStaffSelections.
-  - ORDER LOCK-ON-CLICK: tapping any action on an order card
-    immediately disables that card (processingOrderIds) so a second
-    tap can't double-fire while the first request is still in flight.
-  - MANDATORY PAYMENT ON QUICK SELL: payment method is no longer
-    optional in the Quick Sell cart — matches the same rule already
-    enforced server-side in Code.gs v5.6.
-  - iOS ZOOM FIX: .search-input/.select-input font-size raised from
-    13px to 16px (and the MoMo reference input from 12px to 16px).
-    iOS Safari force-zooms the whole page when you focus an input
-    with font-size under 16px — that's what was causing the "screen
-    moves, have to pinch it back" behaviour.
-  - EXPECTED_BACKEND_VERSION bumped to '5.6' to match Code.gs.
-
-  v5.4: EXPECTED_BACKEND_VERSION bumped to '5.5' to match
-  BarSystem_Code.gs v5.5 (cocktail-sales separation + Bar-categories-
-  first menu ordering). This page already just renders whatever menu
-  array the backend sends via barData.menu, and the backend sends
-  that array pre-sorted (Bar categories first, Cocktail-family
-  categories last), so Quick Sell reorders itself automatically.
+  v5.9 CHANGES (one customer base, not two; cocktail ingredient fix):
+  - REMOVED the "Restock a Cocktail Ingredient" panel. It pointed at a
+    `cocktail_ingredients` table that was never actually created —
+    cocktail ingredients (Rum, Vodka, Lime, Soda, etc.) already live
+    in `bar_stock` with their own unit/par/cost columns and already
+    decrement correctly on every cocktail sale. A second table would
+    have been a duplicate, unsynced copy of the same inventory.
+    Restock cocktail ingredients through the existing "Restock an
+    Item" panel below — it already covers them.
+  - CUSTOMER LOOKUP SIMPLIFIED: used to check Supabase, then the Bar
+    Google Sheet, then a separate Master Customer System as a third
+    source. The Master Customer System now writes into the SAME
+    Supabase table this page already reads first, so that third
+    step was redundant (and was actually two customer records for
+    one person, the exact "why do I have two profiles" bug). Lookup
+    is now Supabase first (covers bar + landing-page + booking
+    customers, all one table), with the Bar Sheet kept only as a
+    fallback for customers created before the Supabase migration.
+  - EXPECTED_BACKEND_VERSION unchanged at '5.7' — no Code.gs change
+    was needed for this pass.
 -->
 <head>
 <meta charset="UTF-8">
@@ -92,10 +86,6 @@ th{text-align:left;padding:8px 10px;color:var(--muted);font-weight:700;letter-sp
 td{padding:7px 10px;border-bottom:1px solid #1a1a1a;}
 tr.low-row td{color:var(--red);}
 tr.low-row{background:#1a0a0a;}
-/* v5.6: font-size raised from 13px to 16px on inputs/selects — iOS
-   Safari auto-zooms the page when focusing an input with font-size
-   under 16px, which was the cause of the "screen moves, need two
-   fingers to shrink it back" report. */
 .search-input,.select-input{background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:10px 14px;color:var(--text);font-size:16px;font-family:'Syne',sans-serif;width:100%;margin-bottom:10px;outline:none;}
 .search-input:focus,.select-input:focus{border-color:var(--gold);}
 .select-input{appearance:auto;}
@@ -194,10 +184,6 @@ tr.low-row{background:#1a0a0a;}
 .order-card.status-placed.is-new{animation:orderFlash 1.4s ease-in-out 3;}
 .order-card.status-preparing{border-left-color:var(--teal);}
 .order-card.status-delivered{border-left-color:#c9861a;}
-/* v5.6: order lock-on-click — the card dims and its select/buttons
-   disable the instant an action is tapped, so a second tap (or the
-   background poll re-rendering) can't fire a duplicate action while
-   the first request is still in flight. */
 .order-card.is-processing{opacity:0.5;}
 @keyframes orderFlash{0%,100%{background:var(--surface);}50%{background:#3a2a06;}}
 .order-card-top{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:8px;}
@@ -211,8 +197,6 @@ tr.low-row{background:#1a0a0a;}
 .order-card-footer{display:flex;justify-content:space-between;align-items:center;gap:10px;}
 .order-total{font-family:'Space Mono',monospace;font-weight:800;color:var(--gold);}
 .order-pay-badge{font-size:10px;color:var(--muted);font-family:'Space Mono',monospace;}
-/* v5.6: per-order staff select — replaces the single global "acting
-   as" dropdown that used to sit in the card header. */
 .order-staff-select{background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:8px 10px;color:var(--text);font-size:16px;font-family:'Syne',sans-serif;width:100%;margin-top:8px;margin-bottom:2px;}
 .order-actions{display:flex;gap:6px;flex-wrap:wrap;margin-top:10px;}
 .order-actions button{flex:1;min-width:110px;padding:8px 10px;font-size:11px;border-radius:6px;border:none;font-weight:800;cursor:pointer;font-family:'Syne',sans-serif;}
@@ -268,7 +252,7 @@ tr.low-row{background:#1a0a0a;}
     </div>
     <div>
       <div class="card">
-        <div class="card-title">&#128100; CUSTOMER LOOKUP <span style="font-weight:400;color:var(--muted);text-transform:none;letter-spacing:0">(so staff can check points/history without opening the sheet)</span></div>
+        <div class="card-title">&#128100; CUSTOMER LOOKUP <span style="font-weight:400;color:var(--muted);text-transform:none;letter-spacing:0">(one shared customer base — bar, bookings, and landing-page sign-ups all live here)</span></div>
         <input class="search-input" id="custPhoneInput" placeholder="Phone number, or ID like THWGH1 / GH1 / 1" onkeydown="if(event.key==='Enter')lookupCustomer()">
         <div class="restock-grid">
           <button class="btn" onclick="lookupCustomer()" style="margin:0">LOOK UP</button>
@@ -281,7 +265,7 @@ tr.low-row{background:#1a0a0a;}
         </div>
       </div>
       <div class="card">
-        <div class="card-title">&#128230; RESTOCK AN ITEM</div>
+        <div class="card-title">&#128230; RESTOCK AN ITEM <span style="font-weight:400;color:var(--muted);text-transform:none;letter-spacing:0">(covers everything, including cocktail pour ingredients — Rum, Lime, Soda, etc. — each item's unit is fixed here so oz/unit can't get mixed up)</span></div>
         <div class="combo-wrap" id="restockItemComboWrap">
           <input class="search-input" id="restockItem" placeholder="Item name (must match Bar Stock exactly)" autocomplete="off" style="margin-bottom:0">
           <div class="combo-list" id="restockItemComboList"></div>
@@ -304,19 +288,6 @@ tr.low-row{background:#1a0a0a;}
         </select>
         <button class="btn" onclick="submitRestock()">+ ADD STOCK</button>
         <div id="restockResult" style="margin-top:8px;font-size:12px"></div>
-      </div>
-      <div class="card">
-        <div class="card-title">&#129514; RESTOCK A COCKTAIL INGREDIENT <span style="font-weight:400;color:var(--muted);text-transform:none;letter-spacing:0">(pour ingredients only — Rum, Lime, Soda, etc. Unit is fixed per ingredient so oz and units can never get mixed up)</span></div>
-        <select class="select-input" id="ciItemSelect" onchange="onCocktailIngredientPicked()">
-          <option value="">Select ingredient...</option>
-        </select>
-        <div id="ciUnitHint" style="font-size:12px;color:var(--teal);margin:-4px 0 10px"></div>
-        <input class="search-input" id="ciQty" type="number" placeholder="Qty to add" style="margin-bottom:8px">
-        <input class="search-input" id="ciPar" type="number" placeholder="Par level (optional)" style="margin-bottom:8px">
-        <input class="search-input" id="ciCost" type="number" placeholder="Cost per unit (optional)">
-        <select class="select-input" id="ciRestockedBy"><option value="">Restocked by... (required)</option></select>
-        <button class="btn" onclick="submitCocktailIngredientRestock()">+ ADD INGREDIENT STOCK</button>
-        <div id="ciResult" style="margin-top:8px;font-size:12px"></div>
       </div>
     </div>
   </div>
@@ -369,27 +340,14 @@ tr.low-row{background:#1a0a0a;}
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script>
-// SUPABASE MIGRATION (re-applied 19 Jul — this was missing from the copy
-// pulled from GitHub, which is why Supabase showed nothing for table
-// orders even though this was supposed to be live). Table Orders
-// read/write goes straight to Postgres. Everything else on this
-// dashboard (Quick Sell, stock, staff, customers, menu edit) is still
-// on the Apps Script API_URL below — that part is unchanged.
 const SUPABASE_URL = 'https://crvuzkyfrqbfmamegxjx.supabase.co';
 const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNydnV6a3lmcnFiZm1hbWVneGp4Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODQ0MzI5NjQsImV4cCI6MjEwMDAwODk2NH0.gMsv3yvw6plDCherA2YdU4UgWRMXUc9H1Hr_IdR9GxA';
 const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
 const API_URL = 'https://script.google.com/macros/s/AKfycbyycYKCEtRchk0eToXIlMLgs3RmWIsKuUppD3UprPO8zLi9N5a9PIgn9uN4IKeip24E/exec';
 
-// v5.8: paste in the /exec URL of the Master Customer System deployment
-// (the SEPARATE Apps Script project bound to "THE WHITE HOUSE EVENTS &
-// MORE CUSTOMER DATABASE" sheet, Sheet ID 1mwQnXiBavINsCr0wn4HstjSCC_AmvEBwTG3-yjl_kw8).
-// Deploy > Manage deployments on that project to get its /exec URL.
-const MASTER_API_URL = 'PASTE_YOUR_MASTER_CUSTOMER_SYSTEM_EXEC_URL_HERE';
-
-// v5.7: bumped to match BarSystem_Code.gs v5.7 (Search & Sell sheet's
-// payment dropdown trimmed to Cash/MoMo only). MUST match
-// BACKEND_VERSION in Code.gs.
+// v5.9: bumped to '5.7' still — matches BarSystem_Code.gs, no Code.gs
+// change was needed for this pass.
 const EXPECTED_BACKEND_VERSION = '5.7';
 
 let barData = {stock: [], todayOrders: [], staff: [], topSellers: [], staleStock: [], restockLog: [], revenueByPayment: []};
@@ -521,29 +479,16 @@ function renderVersionBanner(reportedVersion){
      </ol>`;
 }
 
-// SUPABASE MIGRATION: stock, sales (bar_orders), menu (bar_recipes +
-// food_menu), and restock log now all live in Supabase — this is the
-// single source of truth for those going forward. Staff (names/hours,
-// which aren't in the Supabase staff table yet) still comes from the
-// Apps Script/Sheets side. Quick Sell and Restock write to Supabase
-// via quick_sell_item / restock_item (see submitQuickSellCart /
-// submitRestock below) — Google Sheets' Bar Stock / Bar Orders tabs
-// are no longer being written to by this dashboard.
 async function loadSupabaseBarData(){
-  const [stockRes, ordersRes, recipesRes, foodRes, restockRes, txRes] = await Promise.all([
+  const [stockRes, ordersRes, recipesRes, foodRes, restockRes] = await Promise.all([
     supabaseClient.from('bar_stock').select('*').order('item'),
     supabaseClient.from('bar_orders').select('*').order('created_at', { ascending: false }).limit(500),
     supabaseClient.from('bar_recipes').select('item_name, category, price_ghs'),
     supabaseClient.from('food_menu').select('item_name, category, price_ghs'),
-    supabaseClient.from('restock_log').select('*').order('created_at', { ascending: false }).limit(15),
-    supabaseClient.from('transactions').select('category, amount_ghs, payment_method, created_at')
+    supabaseClient.from('restock_log').select('*').order('created_at', { ascending: false }).limit(15)
   ]);
-  [stockRes, ordersRes, recipesRes, foodRes, restockRes, txRes].forEach(r => { if(r.error) throw new Error(r.error.message); });
+  [stockRes, ordersRes, recipesRes, foodRes, restockRes].forEach(r => { if(r.error) throw new Error(r.error.message); });
 
-  // Match Code.gs's buildCategoryMap_: a stock item's "category" for
-  // display purposes is whatever category the same-named recipe/menu
-  // item has (most stock items are self-referencing, e.g. "Fanta" the
-  // stock ingredient has the same name as "Fanta" the sellable item).
   const categoryMap = {};
   recipesRes.data.forEach(r => { if(r.item_name && r.category) categoryMap[r.item_name.trim().toLowerCase()] = r.category; });
 
@@ -555,7 +500,6 @@ async function loadSupabaseBarData(){
     category: categoryMap[(s.item||'').trim().toLowerCase()] || 'Bar Ingredient'
   }));
 
-  // Bar categories first, cocktail-family last — same ordering rule as Code.gs's CATEGORY_SORT_ORDER.
   const COCKTAIL_CATS = ['Cocktail','Mocktail','Milkshake','Smoothie','Juice','VIP Special'];
   const BAR_FIRST = ['Beer','Soft Drink','Water','Energy','Alcoholic Single','Just Sip','Shot','Pizza','Rice Dishes','Fries','Swallow & Stew','Light Bites'];
   const catRank = c => { const i = BAR_FIRST.indexOf(c); if(i!==-1) return i; const j = COCKTAIL_CATS.indexOf(c); return j!==-1 ? BAR_FIRST.length+j : BAR_FIRST.length+COCKTAIL_CATS.length; };
@@ -563,7 +507,7 @@ async function loadSupabaseBarData(){
     .concat(foodRes.data.map(r => ({ item: r.item_name, category: r.category||'', price: parseFloat(r.price_ghs)||0, source: 'food' })))
     .sort((a,b) => catRank(a.category) - catRank(b.category));
 
-  const GHANA_TZ_TODAY = new Date().toLocaleDateString('en-CA', {timeZone:'Africa/Accra'}); // YYYY-MM-DD, for same-day comparison
+  const GHANA_TZ_TODAY = new Date().toLocaleDateString('en-CA', {timeZone:'Africa/Accra'});
   const todayOrders = [];
   let todayRevenue = 0, todayItemCount = 0;
   const salesByItem = {}, revenueByPayment = {};
@@ -611,8 +555,6 @@ async function loadData(){
       fetch(API_URL + '?action=getBarData&t=' + Date.now()).then(r => r.ok ? r.json() : Promise.reject(new Error('Server responded with status ' + r.status)))
     ]);
     if(!appsScriptData.success) throw new Error(appsScriptData.error || 'Unknown error');
-    // Supabase supplies stock/orders/menu/restockLog/staleStock/topSellers
-    // (the live source now); staff + backend version still come from Sheets.
     barData = { ...appsScriptData, ...supaData, staff: appsScriptData.staff };
     clearApiError();
     document.getElementById('lastRefresh').innerHTML = 'Updated: ' + new Date().toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit'}) + ' <span class="version-pill" id="versionPill"></span>';
@@ -628,7 +570,6 @@ async function loadData(){
     renderRestockLog();
     populateStaffDropdowns();
     populateStockDatalist();
-    loadCocktailIngredients();
     renderQuickSellTabs();
     renderQuickSellMenu();
     renderQuickSellPanel();
@@ -761,8 +702,6 @@ function renderStock(){
   if(activeStockCategory === 'Low Stock'){
     stock = stock.filter(s=>s.lowStock);
   } else if(activeStockCategory !== 'All' && !q){
-    // v5.8: once you start typing, search the whole stock list —
-    // don't stay locked to whichever category tab was active.
     stock = stock.filter(s=>s.category === activeStockCategory);
   }
   stock = stock.filter(s=>!q||s.item.toLowerCase().includes(q));
@@ -838,21 +777,12 @@ function populateStaffDropdowns(){
   if(staff.some(s=>s.initials===current)) sel.value = current;
 }
 
-// BUG FIX (backlog #2): the old <input list="..."> datalist would not
-// reliably reopen once a value was already typed/selected — you had
-// to clear the text first. This is a real dropdown: clicking or
-// focusing the input always reopens the (filtered) list, selecting an
-// item fills the input and closes it, and clicking elsewhere closes it.
 let restockStockItems = [];
 function populateStockDatalist(){
   restockStockItems = (barData.stock||[]).map(s=>s.item);
   renderRestockCombo(document.getElementById('restockItem').value || '');
-
   renderRestockMultiList();
 }
-// v5.8: click-based multi-select replaces the native <select multiple>,
-// which needed Ctrl/Cmd-click on desktop and simply doesn't work as a
-// multi-pick gesture on most mobile browsers.
 let restockMultiSelected = new Set();
 function renderRestockMultiList(){
   const listEl = document.getElementById('restockMultiList');
@@ -876,8 +806,6 @@ function toggleRestockMulti(){
   document.getElementById('restockMultiBox').style.display = on ? '' : 'none';
   document.getElementById('restockItem').disabled = on;
   document.getElementById('restockItem').placeholder = on ? 'Using the multi-item list below instead' : 'Item name (must match Bar Stock exactly)';
-  // v5.8: force the single-item dropdown fully shut when switching to
-  // multi mode, so it can't stay open/reappear on its own.
   if(on) closeRestockCombo();
   else renderRestockMultiList();
 }
@@ -891,7 +819,7 @@ function renderRestockCombo(query){
     listEl.innerHTML = matches.slice(0,60).map(i => `<div class="combo-item" data-val="${i.replace(/"/g,'&quot;')}">${i}</div>`).join('');
     listEl.querySelectorAll('.combo-item').forEach(el => {
       el.addEventListener('mousedown', (e) => {
-        e.preventDefault(); // fires before the input's blur, so the click registers
+        e.preventDefault();
         document.getElementById('restockItem').value = el.dataset.val;
         closeRestockCombo();
       });
@@ -906,7 +834,7 @@ document.addEventListener('DOMContentLoaded', () => {
   const input = document.getElementById('restockItem');
   if(!input) return;
   input.addEventListener('focus', () => renderRestockCombo(input.value));
-  input.addEventListener('click', () => renderRestockCombo(input.value)); // reopens even with existing text — this is the fix
+  input.addEventListener('click', () => renderRestockCombo(input.value));
   input.addEventListener('input', () => renderRestockCombo(input.value));
   document.addEventListener('click', (e) => {
     if(!document.getElementById('restockItemComboWrap').contains(e.target)) closeRestockCombo();
@@ -914,6 +842,12 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 
 let lastFoundCustomer = null;
+// v5.9: one lookup source. Supabase's bar_customers now holds the
+// membership fields the old Master Customer System used to carry
+// separately (business name, membership status, etc.), so it's
+// checked first and covers almost every case. The Bar Google Sheet
+// stays as a fallback purely for any customer created before the
+// Supabase migration and never touched since.
 async function lookupCustomer(prefillQuery){
   const input = document.getElementById('custPhoneInput');
   if(prefillQuery !== undefined) input.value = prefillQuery;
@@ -925,27 +859,22 @@ async function lookupCustomer(prefillQuery){
   resultEl.classList.add('show');
   resultEl.innerHTML = 'Looking up...';
 
-  // GAP FIX: a customer created via a QR table/canteen order only
-  // exists in Supabase's bar_customers — the old Sheets-only lookup
-  // could never find them ("customer can't be found even though
-  // they're in the system"). Now checks Supabase first, then falls
-  // back to Sheets (where Quick Sell/walk-in customers still live).
   try{
-    const { data: supaMatch, error: supaErr } = await supabaseClient.rpc('find_bar_customer', { p_query: query });
+    const { data: supaId, error: supaErr } = await supabaseClient.rpc('find_customer_flexible', { p_query: query });
     if(supaErr) throw new Error(supaErr.message);
-    if(supaMatch){
-      const { data: cust, error: custErr } = await supabaseClient.from('bar_customers').select('*').eq('customer_id', supaMatch).single();
+    if(supaId){
+      const { data: cust, error: custErr } = await supabaseClient.from('bar_customers').select('*').eq('customer_id', supaId).single();
       if(custErr) throw new Error(custErr.message);
       lastFoundCustomer = {
         custId: cust.customer_id, name: cust.name, loyaltyPoints: cust.loyalty_points,
         totalVisits: cust.total_visits, lastVisit: cust.last_visit ? new Date(cust.last_visit).toLocaleDateString('en-GB') : ''
       };
-      resultEl.innerHTML = `<b>${lastFoundCustomer.custId}</b> — ${lastFoundCustomer.name}<br>Loyalty points: ${lastFoundCustomer.loyaltyPoints}<br>Total visits: ${lastFoundCustomer.totalVisits}<br>Last visit: ${lastFoundCustomer.lastVisit||'—'}<span style="display:block;margin-top:6px;color:var(--muted);font-size:11px">Registered via QR ordering (Supabase)</span><button class="btn" style="margin-top:10px" onclick="generateCustomerQR()">&#127915; GENERATE QR ID CARD</button>`;
+      const membershipLine = cust.membership_status === 'VIP' ? '<br>Membership: <b style="color:var(--gold)">VIP</b>' : '';
+      resultEl.innerHTML = `<b>${lastFoundCustomer.custId}</b> — ${lastFoundCustomer.name}${membershipLine}<br>Loyalty points: ${lastFoundCustomer.loyaltyPoints}<br>Total visits: ${lastFoundCustomer.totalVisits}<br>Last visit: ${lastFoundCustomer.lastVisit||'—'}<button class="btn" style="margin-top:10px" onclick="generateCustomerQR()">&#127915; GENERATE QR ID CARD</button>`;
       return;
     }
   }catch(e){
     console.log('Supabase customer lookup error:', e);
-    // fall through to the Sheets lookup below rather than failing outright
   }
 
   try{
@@ -954,40 +883,14 @@ async function lookupCustomer(prefillQuery){
     const data = await res.json();
     if(!data.success) throw new Error(data.error||'Lookup failed');
     if(!data.found){
-      // v5.8: not in Supabase or the bar Sheet — check the Master
-      // Customer database before giving up.
-      await lookupMasterCustomer(query, resultEl);
+      resultEl.innerHTML = "No customer found matching that — they'll be registered next time they order.";
     }else{
       lastFoundCustomer = data;
-      resultEl.innerHTML = `<b>${data.custId}</b> — ${data.name}<br>Loyalty points: ${data.loyaltyPoints}<br>Total visits: ${data.totalVisits}<br>Last visit: ${data.lastVisit||'—'}<span style="display:block;margin-top:6px;color:var(--muted);font-size:11px">Registered via Quick Sell (Google Sheets)</span><button class="btn" style="margin-top:10px" onclick="generateCustomerQR()">&#127915; GENERATE QR ID CARD</button>`;
+      resultEl.innerHTML = `<b>${data.custId}</b> — ${data.name}<br>Loyalty points: ${data.loyaltyPoints}<br>Total visits: ${data.totalVisits}<br>Last visit: ${data.lastVisit||'—'}<span style="display:block;margin-top:6px;color:var(--muted);font-size:11px">Legacy record — created before the Supabase migration</span><button class="btn" style="margin-top:10px" onclick="generateCustomerQR()">&#127915; GENERATE QR ID CARD</button>`;
     }
   }catch(e){
     resultEl.innerHTML = '<span style="color:var(--red)">Error: ' + (e.message||'connection failed') + '. See the yellow banner at the top of the page for the likely cause.</span>';
     showApiError(e.message || 'Customer lookup failed.');
-  }
-}
-
-// v5.8: the Master Customer Database is the business-wide list
-// (bookings, landing-page sign-ups, VIP status) — checked last since
-// it's a separate Apps Script project from the bar system.
-async function lookupMasterCustomer(query, resultEl){
-  if(!MASTER_API_URL || MASTER_API_URL.indexOf('PASTE_YOUR') !== -1){
-    resultEl.innerHTML = "No customer found matching that (checked Supabase and the bar Sheet) — they'll be registered next time they order. <span style='color:var(--muted)'>(Master Customer lookup isn't wired up yet — see MASTER_API_URL near the top of the script.)</span>";
-    return;
-  }
-  try{
-    const res = await fetch(MASTER_API_URL + '?action=searchCustomer&query=' + encodeURIComponent(query) + '&t=' + Date.now());
-    const data = await res.json();
-    if(!data.success) throw new Error(data.error || 'Lookup failed');
-    if(!data.found){
-      resultEl.innerHTML = "No customer found matching that (checked Supabase, the bar Sheet, and the Master Customer database) — they'll be registered next time they order.";
-      return;
-    }
-    const c = data.customer;
-    lastFoundCustomer = { custId: c.custId, name: c.fullName, loyaltyPoints: c.totalPoints, totalVisits: c.totalVisits, lastVisit: c.lastActivity };
-    resultEl.innerHTML = `<b>${c.custId}</b> — ${c.fullName}<br>Membership: ${c.membershipStatus||'Regular'}<br>Points: ${c.totalPoints}<br>Total visits: ${c.totalVisits}<br>Last activity: ${c.lastActivity||'—'}<span style="display:block;margin-top:6px;color:var(--muted);font-size:11px">Found in the Master Customer Database</span><button class="btn" style="margin-top:10px" onclick="generateCustomerQR()">&#127915; GENERATE QR ID CARD</button>`;
-  }catch(e){
-    resultEl.innerHTML = "No customer found matching that (checked Supabase and the bar Sheet; the Master Customer database could not be reached — " + e.message + ")";
   }
 }
 
@@ -1018,8 +921,6 @@ async function submitRestock(){
   if(!restockedBy){ resultEl.innerHTML = '<span style="color:var(--red)">Pick who is restocking from the dropdown.</span>'; return; }
   resultEl.innerHTML = 'Saving...';
 
-  // SUPABASE MIGRATION: restocking now writes straight to bar_stock +
-  // restock_log via the restock_item() function, not Apps Script.
   const clientId = genClientId();
   let result;
   try{
@@ -1046,57 +947,6 @@ async function submitRestock(){
     loadData();
   }else{
     resultEl.innerHTML = '<span style="color:var(--red)">' + result.error + '</span>';
-  }
-}
-
-let cocktailIngredients = [];
-async function loadCocktailIngredients(){
-  try{
-    const { data, error } = await supabaseClient.from('cocktail_ingredients').select('*').order('item');
-    if(error) throw new Error(error.message);
-    cocktailIngredients = data || [];
-    const sel = document.getElementById('ciItemSelect');
-    if(sel){
-      const current = sel.value;
-      sel.innerHTML = '<option value="">Select ingredient...</option>' + cocktailIngredients.map(i=>`<option value="${i.item}">${i.item} (${i.unit})</option>`).join('');
-      if(cocktailIngredients.some(i=>i.item===current)) sel.value = current;
-    }
-    const bySel = document.getElementById('ciRestockedBy');
-    if(bySel){
-      const staff = (barData.staff||[]).filter(s=>s.initials && s.initials.trim());
-      const current = bySel.value;
-      bySel.innerHTML = '<option value="">Restocked by... (required)</option>' + staff.map(s => `<option value="${s.initials}">${s.initials}${s.name?' — '+s.name:''}</option>`).join('');
-      if(staff.some(s=>s.initials===current)) bySel.value = current;
-    }
-  }catch(e){ console.log('loadCocktailIngredients error:', e); }
-}
-function onCocktailIngredientPicked(){
-  const name = document.getElementById('ciItemSelect').value;
-  const item = cocktailIngredients.find(i=>i.item===name);
-  document.getElementById('ciUnitHint').textContent = item ? ('Unit for this ingredient is fixed: ' + item.unit + ' — enter the quantity to add in ' + item.unit + '.') : '';
-}
-async function submitCocktailIngredientRestock(){
-  const item = document.getElementById('ciItemSelect').value;
-  const qty = document.getElementById('ciQty').value;
-  const par = document.getElementById('ciPar').value;
-  const cost = document.getElementById('ciCost').value;
-  const restockedBy = document.getElementById('ciRestockedBy').value;
-  const resultEl = document.getElementById('ciResult');
-  if(!item || !qty){ resultEl.innerHTML = '<span style="color:var(--red)">Pick an ingredient and enter a quantity.</span>'; return; }
-  if(!restockedBy){ resultEl.innerHTML = '<span style="color:var(--red)">Pick who is restocking.</span>'; return; }
-  resultEl.innerHTML = 'Saving...';
-  try{
-    const { data, error } = await supabaseClient.rpc('restock_cocktail_ingredient', {
-      p_item: item, p_qty_added: parseFloat(qty),
-      p_par_level: par ? parseFloat(par) : null, p_cost_per_unit: cost ? parseFloat(cost) : null,
-      p_restocked_by: restockedBy, p_client_id: genClientId()
-    });
-    if(error) throw new Error(error.message);
-    resultEl.innerHTML = `<span class="flash">&#10003; ${item} — new qty: ${data.new_qty} ${data.unit||''}, logged under ${restockedBy}</span>`;
-    document.getElementById('ciQty').value = ''; document.getElementById('ciPar').value = ''; document.getElementById('ciCost').value = '';
-    setTimeout(()=>{ if(resultEl.innerHTML.indexOf(item)!==-1) resultEl.innerHTML=''; }, 6000);
-  }catch(e){
-    resultEl.innerHTML = '<span style="color:var(--red)">' + e.message + '</span>';
   }
 }
 
@@ -1226,9 +1076,6 @@ function renderQuickSellMenu(){
   const q = (document.getElementById('quickSellSearch').value||'').toLowerCase();
   let menu = barData.menu || [];
   if(q){
-    // v5.8: typing a search term searches the WHOLE menu, regardless
-    // of which category tab happens to be selected. The category tab
-    // only applies when the search box is empty.
     menu = menu.filter(m => m.item.toLowerCase().includes(q));
   } else if(quickSellCategory !== 'All'){
     menu = menu.filter(m => (m.category||'Other') === quickSellCategory);
@@ -1388,9 +1235,6 @@ function renderQuickSellPanel(){
 
 function clearCart(){
   cart = {};
-  // BUG FIX (backlog #4): the search box text (e.g. "coke") was never
-  // cleared after a sale completed, so it looked like the order was
-  // "stuck" on screen even though it had gone through.
   const searchEl = document.getElementById('quickSellSearch');
   if(searchEl) searchEl.value = '';
   renderQuickSellMenu();
@@ -1415,8 +1259,6 @@ async function submitQuickSellCart(){
     return;
   }
   if(!staffInitials){ resultEl.innerHTML = '<span style="color:var(--red)">Pick who is serving.</span>'; return; }
-  // v5.6: payment method is now mandatory on Quick Sell, matching the
-  // rule enforced server-side in processSale_ (Code.gs v5.6).
   if(!payment){ resultEl.innerHTML = '<span style="color:var(--red)">Pick a payment method (Cash or MoMo).</span>'; return; }
 
   const itemNames = Object.keys(cart).filter(k => cart[k] > 0);
@@ -1429,11 +1271,6 @@ async function submitQuickSellCart(){
   const lineResults = [];
   let firstError = null;
 
-  // SUPABASE MIGRATION: each cart line now calls quick_sell_item()
-  // directly instead of going through Apps Script — same one-call-
-  // per-item pattern as before, no offline queue (if there's no
-  // connection the call just fails and the item stays in the cart to
-  // retry, same as a failed line always has).
   for(const itemName of itemNames){
     const qty = cart[itemName];
     const clientId = genClientId();
@@ -1565,10 +1402,6 @@ let seenActiveOrderIds = new Set();
 let tableOrdersFirstLoad = true;
 let lastActiveSignature = null;
 
-// v5.6: per-order staff assignment (was a single global "acting as"
-// dropdown) and the set of orders currently mid-request (order
-// lock-on-click), so a second tap or a background poll re-render
-// can't fire a duplicate action while the first one is in flight.
 let orderStaffSelections = {};
 let processingOrderIds = new Set();
 
@@ -1666,9 +1499,6 @@ function renderTableOrders(){
     return (order[a.status]??3) - (order[b.status]??3) || new Date(a.timestamp) - new Date(b.timestamp);
   });
 
-  // v5.6: include processing state in the signature so a lock-on-click
-  // (or its release) always forces a re-render even if nothing else
-  // about the order changed.
   const signature = activeOrdersSignature(active) + '|proc:' + Array.from(processingOrderIds).sort().join(',');
   if(signature === lastActiveSignature){
     updateOrderAges();
@@ -1736,8 +1566,6 @@ function updateOrderAges(){
 }
 
 async function tableOrderAction(orderId, newStatus){
-  // v5.6: order lock-on-click — refuse to fire a second action on an
-  // order that already has one in flight.
   if(processingOrderIds.has(orderId)) return;
 
   const staffInitials = orderStaffSelections[orderId] || '';
@@ -1748,17 +1576,10 @@ async function tableOrderAction(orderId, newStatus){
   const momoInput = document.getElementById('momoRef_' + orderId);
   if(momoInput) momoReference = momoInput.value.trim();
 
-  // lock the card immediately, before the request even goes out
   processingOrderIds.add(orderId);
   lastActiveSignature = null;
   renderTableOrders();
 
-  // SUPABASE MIGRATION: calls a Postgres function instead of Apps
-  // Script. mark_location_order_paid does the same stock-decrement +
-  // cocktail-sales + loyalty-points work updateOrderStatus_ used to do
-  // server-side, atomically, and is safe to retry (duplicate taps are
-  // a no-op). No offline queue: if there's no connection the call just
-  // fails and the button re-enables — try again once back online.
   let result;
   try{
     let rpcResult;
