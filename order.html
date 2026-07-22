@@ -202,7 +202,8 @@ body{background:var(--black);color:var(--text);font-family:'Syne',sans-serif;min
 
     <div class="field-label">Phone number or membership number (required)</div>
     <input class="search-input" id="custPhone" placeholder="e.g. 0241234567 or THWGH12">
-    <div style="font-size:11px;color:var(--text-dim);margin:-6px 0 12px;line-height:1.5">Already a member? Enter your membership number. First time? Just enter your phone number — we'll set you up automatically.</div>
+    <div style="font-size:11px;color:var(--text-dim);margin:-6px 0 8px;line-height:1.5">Already a member? Enter your membership number. First time? Just enter your phone number — we'll set you up automatically.</div>
+    <div style="font-size:11px;color:var(--teal);margin:0 0 12px;line-height:1.5">&#128274; Your name and phone number are used only to manage your points, membership, and order history at The White House Events &amp; More. We never sell or share your information with anyone outside the venue.</div>
 
     <div id="submitError" class="error-msg"></div>
     <button class="btn" id="submitBtn" onclick="submitOrder()" disabled>SELECT A PAYMENT METHOD</button>
@@ -737,6 +738,7 @@ async function loadMemberAccount(){
     const content = document.getElementById('memberBarContent');
     let html = `<b>Welcome back, ${member.name}</b> — ${member.custId}`;
     if(cust) html += ` · ${cust.loyalty_points||0} points · ${cust.total_visits||0} visits`;
+    html += `<div style="margin-top:8px;font-size:11px;color:var(--text-dim)">Phone on file: ${member.phone} &middot; <span style="color:var(--teal)">&#128274; kept private, never sold or shared</span></div>`;
     if(favorites.length){
       html += `<div style="margin-top:10px;font-size:12px;color:var(--text-dim)">Your usual — tap to add:</div>`;
       html += `<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:6px">` +
