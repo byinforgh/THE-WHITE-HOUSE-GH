@@ -1,28 +1,31 @@
 <!DOCTYPE html>
 <html lang="en">
 <!--
-  THE WHITE HOUSE EVENTS & MORE — BAR DASHBOARD (v5.9)
+  THE WHITE HOUSE EVENTS & MORE — BAR DASHBOARD (v6.0)
 
-  v5.9 CHANGES (one customer base, not two; cocktail ingredient fix):
-  - REMOVED the "Restock a Cocktail Ingredient" panel. It pointed at a
-    `cocktail_ingredients` table that was never actually created —
-    cocktail ingredients (Rum, Vodka, Lime, Soda, etc.) already live
-    in `bar_stock` with their own unit/par/cost columns and already
-    decrement correctly on every cocktail sale. A second table would
-    have been a duplicate, unsynced copy of the same inventory.
-    Restock cocktail ingredients through the existing "Restock an
-    Item" panel below — it already covers them.
-  - CUSTOMER LOOKUP SIMPLIFIED: used to check Supabase, then the Bar
-    Google Sheet, then a separate Master Customer System as a third
-    source. The Master Customer System now writes into the SAME
-    Supabase table this page already reads first, so that third
-    step was redundant (and was actually two customer records for
-    one person, the exact "why do I have two profiles" bug). Lookup
-    is now Supabase first (covers bar + landing-page + booking
-    customers, all one table), with the Bar Sheet kept only as a
-    fallback for customers created before the Supabase migration.
-  - EXPECTED_BACKEND_VERSION unchanged at '5.7' — no Code.gs change
-    was needed for this pass.
+  v6.0 CHANGES (full Supabase migration + staff unification + full-width layout):
+  - REMOVED all Apps Script (Google Sheets / Code.gs) dependency. Staff,
+    stock, orders, menu, restocks, and customer lookup now come from
+    Supabase only. The version-banner/EXPECTED_BACKEND_VERSION system
+    tracked Code.gs deployment drift — with Code.gs gone from this page's
+    data path entirely, that system is gone too.
+  - Staff list now reads from Supabase's `staff` table (already existed,
+    22 rows, was just never wired up here) instead of the old
+    🧑‍💼 Staff Google Sheet tab via Apps Script. Fixes "S22 added, didn't
+    show up" — that was always a two-separate-stores problem, same
+    pattern already fixed once for customers.
+  - Fixed a real duplicate-stock bug found this session: "Soda" and
+    "Soda/Sprite" were two separate bar_stock rows for the same physical
+    product, with different cocktail recipes silently decrementing
+    different ones. Merged into "Soda" (191oz combined) and repointed
+    Mojito Classic / Virgin Mojito to it. This — not a naming miss — is
+    almost certainly why stock looked like it was "dropping on its own".
+  - Full audit of every recipe ingredient against bar_stock item names:
+    no other mismatches found.
+  - Layout: .main max-width raised and made responsive (breakpoints at
+    900/1400/1800px) so wide phones/tablets/desktops use the freed-up
+    space instead of leaving it blank either side. Metrics, quick-sell,
+    and stock grids now flow into more columns on wider viewports.
 -->
 <head>
 <meta charset="UTF-8">
@@ -40,9 +43,6 @@ body{background:var(--black);color:var(--text);font-family:'Syne',sans-serif;min
 .logo span{color:var(--text-dim);font-weight:400;font-size:11px;display:block;letter-spacing:2px;margin-top:2px;}
 .header-right{display:flex;align-items:center;gap:14px;}
 .last-refresh{font-size:11px;color:var(--muted);font-family:'Space Mono',monospace;}
-.version-pill{font-size:10px;font-family:'Space Mono',monospace;padding:2px 8px;border-radius:10px;margin-left:6px;border:1px solid var(--border);}
-.version-pill.ok{color:var(--green);border-color:var(--green);}
-.version-pill.bad{color:var(--red);border-color:var(--red);}
 .conn-status{font-size:11px;font-family:'Space Mono',monospace;padding:4px 10px;border-radius:20px;background:var(--surface);border:1px solid var(--border);}
 .conn-status.online{color:var(--green);border-color:var(--green);}
 .conn-status.offline{color:var(--red);border-color:var(--red);}
@@ -56,11 +56,14 @@ body{background:var(--black);color:var(--text);font-family:'Syne',sans-serif;min
 .refresh-btn{background:var(--border);border:none;color:var(--text);padding:8px 16px;border-radius:5px;cursor:pointer;font-size:12px;font-weight:700;letter-spacing:1px;font-family:'Syne',sans-serif;}
 .refresh-btn:hover{background:var(--gold);color:var(--black);}
 .main{padding:20px 24px;max-width:1300px;margin:0 auto;}
+@media(min-width:1400px){.main{max-width:1680px;padding:24px 40px;}}
+@media(min-width:1800px){.main{max-width:2000px;padding:28px 56px;}}
 .low-stock-banner{display:none;background:#2a0a0a;border:1px solid var(--red);border-radius:8px;padding:16px 20px;margin-bottom:20px;}
 .low-stock-banner.active{display:block;}
 .low-stock-banner-title{color:var(--red);font-weight:800;font-size:13px;letter-spacing:1px;margin-bottom:8px;}
 .low-stock-pill{display:inline-block;background:#3a1010;border:1px solid var(--red);color:#ffb3b3;padding:5px 12px;border-radius:20px;font-size:12px;margin:3px 4px 0 0;font-family:'Space Mono',monospace;}
 .metrics-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px;margin-bottom:8px;}
+@media(min-width:1400px){.metrics-grid{grid-template-columns:repeat(4,1fr);}}
 .metric-card{background:var(--card);border:1px solid var(--border);border-radius:8px;padding:18px;position:relative;overflow:hidden;cursor:pointer;transition:border-color .15s,transform .1s;}
 .metric-card:hover{border-color:var(--muted);}
 .metric-card.expanded{border-color:var(--gold);}
@@ -79,6 +82,7 @@ body{background:var(--black);color:var(--text);font-family:'Syne',sans-serif;min
 .metric-detail-empty{color:var(--muted);padding:6px 0;}
 .two-col{display:grid;grid-template-columns:1.3fr 1fr;gap:16px;margin-bottom:20px;}
 @media(max-width:900px){.two-col{grid-template-columns:1fr;}}
+@media(min-width:1600px){.two-col{grid-template-columns:1.6fr 1fr;}}
 .card{background:var(--card);border:1px solid var(--border);border-radius:8px;padding:18px;margin-bottom:16px;}
 .card-title{font-size:11px;font-weight:700;letter-spacing:2px;color:var(--muted);margin-bottom:14px;text-transform:uppercase;}
 table{width:100%;border-collapse:collapse;font-size:12px;}
@@ -131,13 +135,9 @@ tr.low-row{background:#1a0a0a;}
 .error-banner{display:none;background:#2a1a0a;border:1px solid var(--gold-dim);border-radius:8px;padding:14px 18px;margin-bottom:20px;font-size:12px;line-height:1.6;color:#ffdca8;}
 .error-banner.active{display:block;}
 .error-banner b{color:var(--gold);}
-.version-banner{display:none;background:#2a0a0a;border:1px solid var(--red);border-radius:8px;padding:14px 18px;margin-bottom:20px;font-size:12px;line-height:1.7;color:#ffc9c9;}
-.version-banner.active{display:block;}
-.version-banner b{color:var(--red);}
-.version-banner ol{margin:8px 0 0 18px;padding:0;}
-.version-banner li{margin-bottom:4px;}
 .flash{color:var(--green);}
 .quick-sell-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:8px;max-height:280px;overflow-y:auto;margin-top:4px;}
+@media(min-width:1400px){.quick-sell-grid{max-height:360px;}}
 .quick-sell-item{background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:10px 12px;cursor:pointer;transition:border-color .15s;text-align:left;display:flex;flex-direction:column;gap:2px;}
 .quick-sell-item:hover{border-color:var(--gold);}
 .quick-sell-item.in-cart{border-color:var(--gold);background:#1e1706;}
@@ -203,6 +203,8 @@ tr.low-row{background:#1a0a0a;}
 .oa-primary{background:var(--gold);color:var(--black);}
 .oa-cancel{background:transparent;border:1px solid var(--red)!important;color:var(--red);}
 .order-momo-input{background:var(--card);border:1px solid var(--teal);border-radius:6px;padding:8px 10px;font-size:16px;color:var(--text);width:100%;margin-bottom:6px;font-family:'Syne',sans-serif;}
+@media(min-width:1400px){.order-cards-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;align-items:start;}}
+@media(min-width:1900px){.order-cards-grid{grid-template-columns:1fr 1fr 1fr;}}
 </style>
 </head>
 <body>
@@ -215,13 +217,12 @@ tr.low-row{background:#1a0a0a;}
 </div>
 
 <div class="main">
-  <div class="version-banner" id="versionBanner"></div>
   <div class="error-banner" id="errorBanner"></div>
   <div class="pending-banner" id="pendingBanner"></div>
 
   <div class="card" id="tableOrdersCard">
     <div class="card-title">&#128203; INCOMING TABLE ORDERS <span style="font-weight:400;color:var(--muted);text-transform:none;letter-spacing:0">(from QR ordering — pick staff on each order card below)</span></div>
-    <div id="tableOrdersBody"><div class="empty">Loading table orders...</div></div>
+    <div class="order-cards-grid" id="tableOrdersBody"><div class="empty">Loading table orders...</div></div>
   </div>
 
   <div class="low-stock-banner" id="lowStockBanner">
@@ -320,7 +321,7 @@ tr.low-row{background:#1a0a0a;}
   </div>
 
   <div class="card">
-    <div class="card-title">&#129489;&#8205;&#128188; STAFF ON DUTY <span style="font-weight:400;color:var(--muted);text-transform:none;letter-spacing:0">(edit names/hours in the 🧑‍💼 Staff sheet)</span></div>
+    <div class="card-title">&#129489;&#8205;&#128188; STAFF ON DUTY <span style="font-weight:400;color:var(--muted);text-transform:none;letter-spacing:0">(now read straight from Supabase — add/edit staff in the Supabase Table Editor)</span></div>
     <div class="staff-grid" id="staffGrid"><div class="empty">Loading staff...</div></div>
   </div>
 
@@ -349,11 +350,9 @@ const SUPABASE_URL = 'https://crvuzkyfrqbfmamegxjx.supabase.co';
 const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNydnV6a3lmcnFiZm1hbWVneGp4Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODQ0MzI5NjQsImV4cCI6MjEwMDAwODk2NH0.gMsv3yvw6plDCherA2YdU4UgWRMXUc9H1Hr_IdR9GxA';
 const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
-const API_URL = 'https://script.google.com/macros/s/AKfycbyycYKCEtRchk0eToXIlMLgs3RmWIsKuUppD3UprPO8zLi9N5a9PIgn9uN4IKeip24E/exec';
-
-// v5.9: bumped to '5.7' still — matches BarSystem_Code.gs, no Code.gs
-// change was needed for this pass.
-const EXPECTED_BACKEND_VERSION = '5.7';
+// v6.0: Apps Script is no longer used anywhere on this page. Everything
+// (stock, orders, menu, restocks, staff, customer lookup) reads from
+// and writes to Supabase directly.
 
 let barData = {stock: [], todayOrders: [], staff: [], topSellers: [], staleStock: [], restockLog: [], revenueByPayment: []};
 let activeStockCategory = 'All';
@@ -384,22 +383,6 @@ function queueAction(kind, label, url, clientId){
   queue.push({ id: clientId, kind, label, url, queuedAt: new Date().toISOString(), attempts: 0, nextRetryAt: 0 });
   savePendingQueue(queue);
   renderPendingBanner();
-}
-
-async function fetchOrQueue(url, kind, label, clientId){
-  try{
-    const res = await fetch(url + '&clientId=' + encodeURIComponent(clientId));
-    if(!res.ok) throw new Error('Server responded with status ' + res.status);
-    const data = await res.json();
-    if(!data.success) return { ok: false, error: data.error || 'Request failed', queued: false };
-    return { ok: true, data };
-  }catch(e){
-    if(e instanceof TypeError || /network|fetch/i.test(e.message||'')){
-      queueAction(kind, label, url, clientId);
-      return { ok: false, queued: true, error: 'No connection — queued, will send automatically once back online.' };
-    }
-    return { ok: false, queued: false, error: e.message || 'Request failed' };
-  }
 }
 
 async function flushPendingQueue(silent){
@@ -455,44 +438,23 @@ window.addEventListener('offline', updateConnStatus);
 
 function showApiError(msg){
   const el = document.getElementById('errorBanner');
-  el.innerHTML = "<b>&#9888; Dashboard can't reach the sheet:</b> " + msg +
-    ' <br><br>Most common cause: Code.gs was edited but the deployment was not updated. In Apps Script, go to <b>Deploy &gt; Manage deployments</b>, click the pencil on the existing deployment, set Version to <b>New version</b>, and Deploy again (using "New deployment" instead creates a different URL and will not fix this one). Also confirm "Execute as: Me" and "Who has access: Anyone" are set there.';
+  el.innerHTML = "<b>&#9888; Dashboard can't reach Supabase:</b> " + msg + ' <br><br>Check your internet connection and hit Refresh. If this keeps happening, the Supabase project may be paused or the anon key may have changed.';
   el.classList.add('active');
 }
 function clearApiError(){
   document.getElementById('errorBanner').classList.remove('active');
 }
 
-function renderVersionBanner(reportedVersion){
-  const el = document.getElementById('versionBanner');
-  const pill = document.getElementById('versionPill');
-  if(reportedVersion === EXPECTED_BACKEND_VERSION){
-    el.classList.remove('active'); el.innerHTML = '';
-    if(pill){ pill.textContent = 'v' + reportedVersion; pill.className = 'version-pill ok'; }
-    return;
-  }
-  if(pill){ pill.textContent = reportedVersion ? ('v' + reportedVersion + ' (stale)') : 'unknown version'; pill.className = 'version-pill bad'; }
-  el.classList.add('active');
-  el.innerHTML = `<b>&#9888; Backend is not up to date.</b> This dashboard expects backend <b>v${EXPECTED_BACKEND_VERSION}</b>, but the live deployment ` +
-    (reportedVersion ? `is reporting <b>v${reportedVersion}</b>` : `didn't report a version at all (meaning it's running code from before v4.7)`) +
-    `. Your Code.gs edits are NOT live yet. Fix it now:` +
-    `<ol>
-       <li>Open the sheet &gt; <b>Extensions &gt; Apps Script</b>. Confirm Code.gs actually contains <code>var BACKEND_VERSION = '${EXPECTED_BACKEND_VERSION}';</code> near the top — if not, paste in the latest Code.gs and Save.</li>
-       <li><b>Deploy &gt; Manage deployments</b> &gt; click the pencil (&#9998;) icon on the <u>existing</u> deployment (don't create a new one — that gives a different URL).</li>
-       <li>Set Version to <b>New version</b>, then click <b>Deploy</b>.</li>
-       <li>Hard-refresh this page (Cmd/Ctrl+Shift+R).</li>
-     </ol>`;
-}
-
 async function loadSupabaseBarData(){
-  const [stockRes, ordersRes, recipesRes, foodRes, restockRes] = await Promise.all([
+  const [stockRes, ordersRes, recipesRes, foodRes, restockRes, staffRes] = await Promise.all([
     supabaseClient.from('bar_stock').select('*').order('item'),
     supabaseClient.from('bar_orders').select('*').order('created_at', { ascending: false }).limit(500),
     supabaseClient.from('bar_recipes').select('item_name, category, price_ghs'),
     supabaseClient.from('food_menu').select('item_name, category, price_ghs'),
-    supabaseClient.from('restock_log').select('*').order('created_at', { ascending: false }).limit(15)
+    supabaseClient.from('restock_log').select('*').order('created_at', { ascending: false }).limit(15),
+    supabaseClient.from('staff').select('*').eq('active', true).order('slot')
   ]);
-  [stockRes, ordersRes, recipesRes, foodRes, restockRes].forEach(r => { if(r.error) throw new Error(r.error.message); });
+  [stockRes, ordersRes, recipesRes, foodRes, restockRes, staffRes].forEach(r => { if(r.error) throw new Error(r.error.message); });
 
   const categoryMap = {};
   recipesRes.data.forEach(r => { if(r.item_name && r.category) categoryMap[r.item_name.trim().toLowerCase()] = r.category; });
@@ -511,6 +473,11 @@ async function loadSupabaseBarData(){
   const menu = recipesRes.data.map(r => ({ item: r.item_name, category: r.category||'', price: parseFloat(r.price_ghs)||0, source: 'bar' }))
     .concat(foodRes.data.map(r => ({ item: r.item_name, category: r.category||'', price: parseFloat(r.price_ghs)||0, source: 'food' })))
     .sort((a,b) => catRank(a.category) - catRank(b.category));
+
+  const staff = staffRes.data.map(s => ({
+    initials: s.initials || s.staff_code || '', name: s.full_name || '',
+    workingDays: s.working_days || '', workingHours: s.working_hours || (s.shift_start && s.shift_end ? (s.shift_start + ' – ' + s.shift_end) : '')
+  }));
 
   const GHANA_TZ_TODAY = new Date().toLocaleDateString('en-CA', {timeZone:'Africa/Accra'});
   const todayOrders = [];
@@ -546,7 +513,7 @@ async function loadSupabaseBarData(){
   }));
 
   return { stock, menu, todayOrders: todayOrders.reverse(), todayRevenue, todayItemCount, revenueByPayment: revenueByPaymentList,
-    topSellers, staleStock, restockLog, lowStockCount: stock.filter(s=>s.lowStock).length };
+    topSellers, staleStock, restockLog, staff, lowStockCount: stock.filter(s=>s.lowStock).length };
 }
 
 async function loadData(){
@@ -555,15 +522,10 @@ async function loadData(){
   if(navigator.onLine) flushPendingQueue(true);
   document.getElementById('lastRefresh').innerHTML = 'Refreshing...';
   try{
-    const [supaData, appsScriptData] = await Promise.all([
-      loadSupabaseBarData(),
-      fetch(API_URL + '?action=getBarData&t=' + Date.now()).then(r => r.ok ? r.json() : Promise.reject(new Error('Server responded with status ' + r.status)))
-    ]);
-    if(!appsScriptData.success) throw new Error(appsScriptData.error || 'Unknown error');
-    barData = { ...appsScriptData, ...supaData, staff: appsScriptData.staff };
+    const supaData = await loadSupabaseBarData();
+    barData = supaData;
     clearApiError();
-    document.getElementById('lastRefresh').innerHTML = 'Updated: ' + new Date().toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit'}) + ' <span class="version-pill" id="versionPill"></span>';
-    renderVersionBanner(appsScriptData.backendVersion || null);
+    document.getElementById('lastRefresh').textContent = 'Updated: ' + new Date().toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit'});
     renderMetrics();
     renderLowStockBanner();
     renderOrders();
@@ -765,7 +727,7 @@ function renderRestockLog(){
 function renderStaff(){
   const staff = (barData.staff||[]).filter(s=>s.name || (s.initials && s.initials.trim()));
   const el = document.getElementById('staffGrid');
-  if(staff.length===0){ el.innerHTML = '<div class="empty">No staff profiles filled in yet — add names in the 🧑‍💼 Staff sheet.</div>'; return; }
+  if(staff.length===0){ el.innerHTML = '<div class="empty">No active staff profiles found in Supabase yet — add rows in the staff table.</div>'; return; }
   el.innerHTML = staff.map(s=>`
     <div class="staff-card">
       <div class="staff-initials">${s.initials||'—'}</div>
@@ -848,12 +810,10 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 
 let lastFoundCustomer = null;
-// v5.9: one lookup source. Supabase's bar_customers now holds the
-// membership fields the old Master Customer System used to carry
-// separately (business name, membership status, etc.), so it's
-// checked first and covers almost every case. The Bar Google Sheet
-// stays as a fallback purely for any customer created before the
-// Supabase migration and never touched since.
+// v6.0: Supabase is the only customer lookup source now — the Apps
+// Script/Bar-Sheet fallback is gone. Anyone from before the migration
+// should already be in bar_customers; if find_customer_flexible truly
+// can't find someone, they get registered fresh next time they order.
 async function lookupCustomer(prefillQuery){
   const input = document.getElementById('custPhoneInput');
   if(prefillQuery !== undefined) input.value = prefillQuery;
@@ -877,25 +837,11 @@ async function lookupCustomer(prefillQuery){
       };
       const membershipLine = cust.membership_status === 'VIP' ? '<br>Membership: <b style="color:var(--gold)">VIP</b>' : '';
       resultEl.innerHTML = `<b>${lastFoundCustomer.custId}</b> — ${lastFoundCustomer.name}${membershipLine}<br>Loyalty points: ${lastFoundCustomer.loyaltyPoints}<br>Total visits: ${lastFoundCustomer.totalVisits}<br>Last visit: ${lastFoundCustomer.lastVisit||'—'}<button class="btn" style="margin-top:10px" onclick="generateCustomerQR()">&#127915; GENERATE QR ID CARD</button>`;
-      return;
-    }
-  }catch(e){
-    console.log('Supabase customer lookup error:', e);
-  }
-
-  try{
-    const res = await fetch(API_URL + '?action=getCustomer&query=' + encodeURIComponent(query) + '&t=' + Date.now());
-    if(!res.ok){ throw new Error('Server responded with status ' + res.status); }
-    const data = await res.json();
-    if(!data.success) throw new Error(data.error||'Lookup failed');
-    if(!data.found){
-      resultEl.innerHTML = "No customer found matching that — they'll be registered next time they order.";
     }else{
-      lastFoundCustomer = data;
-      resultEl.innerHTML = `<b>${data.custId}</b> — ${data.name}<br>Loyalty points: ${data.loyaltyPoints}<br>Total visits: ${data.totalVisits}<br>Last visit: ${data.lastVisit||'—'}<span style="display:block;margin-top:6px;color:var(--muted);font-size:11px">Legacy record — created before the Supabase migration</span><button class="btn" style="margin-top:10px" onclick="generateCustomerQR()">&#127915; GENERATE QR ID CARD</button>`;
+      resultEl.innerHTML = "No customer found matching that — they'll be registered next time they order.";
     }
   }catch(e){
-    resultEl.innerHTML = '<span style="color:var(--red)">Error: ' + (e.message||'connection failed') + '. See the yellow banner at the top of the page for the likely cause.</span>';
+    resultEl.innerHTML = '<span style="color:var(--red)">Error: ' + (e.message||'connection failed') + '. Check your internet connection and try again.</span>';
     showApiError(e.message || 'Customer lookup failed.');
   }
 }
@@ -1200,7 +1146,7 @@ function renderQuickSellPanel(){
     <div class="qs-title"><span>&#128722; CART (${itemNames.length} item${itemNames.length>1?'s':''})</span><button type="button" class="cart-remove" id="qsClearCart" title="Clear cart" style="font-size:12px;color:var(--muted)">CLEAR</button></div>
     <div class="cart-list" id="cartList"></div>
     <div class="cart-subtotal-row"><span>Subtotal</span><span class="cart-subtotal-value">&#8373;${subtotal.toFixed(2)}</span></div>
-    ${staff.length===0 ? '<div class="qs-warning">&#9888; No staff with initials found in the 🧑\u200d💼 Staff sheet — the "Served by" list below will be empty. Fill in Slot/Initials on the Staff sheet, then hit Refresh.</div>' : ''}
+    ${staff.length===0 ? '<div class="qs-warning">&#9888; No active staff with initials found in Supabase — the "Served by" list below will be empty. Add staff rows in the Supabase Table Editor, then hit Refresh.</div>' : ''}
     <div class="qs-field-grid" style="margin-top:10px">
       <div>
         <div class="qs-label">Served by (required)</div>
@@ -1270,7 +1216,7 @@ async function submitQuickSellCart(){
 
   const staff = (barData.staff||[]).filter(s=>s.initials && s.initials.trim());
   if(staff.length === 0){
-    resultEl.innerHTML = '<span style="color:var(--red)">No staff are set up yet — add initials in the 🧑\u200d💼 Staff sheet, then Refresh before selling.</span>';
+    resultEl.innerHTML = '<span style="color:var(--red)">No active staff are set up yet — add rows in the Supabase staff table, then Refresh before selling.</span>';
     return;
   }
   if(!staffInitials){ resultEl.innerHTML = '<span style="color:var(--red)">Pick who is serving.</span>'; return; }
