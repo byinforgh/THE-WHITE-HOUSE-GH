@@ -121,7 +121,10 @@ body{background:var(--black);color:var(--text);font-family:'Syne',sans-serif;min
 <body>
 
 <div class="header">
-  <div class="logo">THE WHITE HOUSE EVENTS & MORE</div>
+  <div style="display:flex;align-items:center;justify-content:center;gap:10px">
+    <img src="logo.jpg" alt="" style="height:32px;width:auto;border-radius:6px;display:block" onerror="this.style.display='none'">
+    <div class="logo">THE WHITE HOUSE EVENTS & MORE</div>
+  </div>
   <div class="loc-pill" id="locPill">Table Order</div>
 </div>
 
@@ -613,6 +616,17 @@ async function submitOrder(){
   if(barNames.length) subOrders.push({ action: 'placeTableOrder', label: 'Drinks & Bar Items', names: barNames });
   if(foodNames.length) subOrders.push({ action: 'placeCanteenOrder', label: 'Food', names: foodNames });
 
+  // COMBO LINKING: when someone orders both drinks and food, the bar
+  // queue and kitchen queue are still deliberately separate (so bar
+  // staff aren't shown food orders and vice versa), but each one's
+  // notes field now names the other's order ID. Both dashboards use
+  // this to show a small "also ordered: X — status Y" badge, so
+  // staff know a table has a second order in flight elsewhere instead
+  // of the two queues looking unrelated.
+  const isCombo = subOrders.length > 1;
+  const comboTs = Date.now();
+  const orderIdFor = (action) => (action === 'placeCanteenOrder' ? 'CAN' : 'TBL') + comboTs;
+
   const btn = document.getElementById('submitBtn');
   btn.disabled = true;
   btn.textContent = 'Sending order...';
@@ -622,7 +636,12 @@ async function submitOrder(){
   for(const sub of subOrders){
     const clientId = genClientId();
     const items = sub.names.map(n => ({item: n, qty: cart[n]}));
-    const payload = { action: sub.action, label: sub.label, locationType: locationType, locationDetail: locationDetail, itemsJson: JSON.stringify(items), payment: selectedPayment, customerName: custName, phone: phone, clientId: clientId };
+    let notes = null;
+    if(isCombo){
+      const other = subOrders.find(s => s !== sub);
+      notes = 'Also ordered: ' + other.label + ' — ' + orderIdFor(other.action);
+    }
+    const payload = { action: sub.action, label: sub.label, locationType: locationType, locationDetail: locationDetail, itemsJson: JSON.stringify(items), payment: selectedPayment, customerName: custName, phone: phone, clientId: clientId, orderId: orderIdFor(sub.action), notes: notes };
     const result = await trySendOrder(payload);
     outcomes.push({ payload, result, names: sub.names });
   }
@@ -670,7 +689,7 @@ async function trySendOrder(payload){
     return { ok: false, error: 'Unknown order type: ' + payload.action };
   }
 
-  const orderId = (payload.action === 'placeCanteenOrder' ? 'CAN' : 'TBL') + Date.now();
+  const orderId = payload.orderId || ((payload.action === 'placeCanteenOrder' ? 'CAN' : 'TBL') + Date.now());
   let items;
   try{ items = JSON.parse(payload.itemsJson); }catch(e){ items = []; }
   // itemsJson only carries {item, qty} — look the price up from the
@@ -693,7 +712,8 @@ async function trySendOrder(payload){
         status: 'Placed',
         customer_name: payload.customerName,
         customer_phone: payload.phone,
-        client_request_id: payload.clientId
+        client_request_id: payload.clientId,
+        notes: payload.notes || null
       }])
       .select()
       .single();
