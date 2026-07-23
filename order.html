@@ -1,65 +1,28 @@
 <!DOCTYPE html>
 <html lang="en">
 <!--
-  THE WHITE HOUSE EVENTS & MORE — TABLE ORDER PAGE (v3.1, paired with Code.gs v5.7)
+  THE WHITE HOUSE EVENTS & MORE — TABLE ORDER PAGE (v4.0, Supabase-only)
 
-  v3.1 CHANGES:
-  - REBRAND: "The White House GH" -> "The White House Events & More".
-  - LOCATION TYPES: "Delivery" replaced with "Terrace Area" (matches
-    Code.gs v5.6's ORDER_LOCATION_TYPES) — Terrace Area needs no
-    detail field, same as Bar Area/VIP Area/Pool/Stage Area, so the
-    old Delivery-specific address prompt is gone. "Stage 2 Area"
-    added the same way.
-  - GROUP FILTER (ALL / BAR / CANTEEN / COCKTAILS): a new row of tabs
-    above the existing category tabs (Beer, Cocktail, Pizza, etc.).
-    Every menu item already carries a `source` field ('bar' or
-    'food') from the backend's buildCombinedMenu_, so BAR/CANTEEN
-    split on that; COCKTAILS pulls out the same cocktail-family
-    categories Code.gs treats specially (Cocktail, Mocktail,
-    Milkshake, Smoothie, Juice, VIP Special) regardless of source.
-    Defaults to BAR on page load, per request. The category tabs
-    underneath now only show categories present within the selected
-    group, so it's a two-level filter (group, then category).
-  - iOS ZOOM FIX: .search-input font-size raised from 14px to 16px.
-
-  v3.0 — two bug fixes:
-  1. Food ordered from this page (which shows drinks AND food
-     together) now correctly routes to the canteen's queue instead of
-     the bar's. The cart is split by item source at submit time —
-     invisible to the customer, who just taps Submit Order once.
-  2. Menu taps sometimes needed 2-4 attempts to register — fixed by
-     no longer rebuilding the entire menu grid on every single tap.
-
-  v2.1: the "no connection, retrying" screen now backs off instead of
-  retrying every 5 seconds flat — see canteen-order.html for why.
-
-  v2.0: now shares the same location picker as canteen-order.html —
-  Table (1-50), Pickup, Room Number, Bar Area, VIP Area, Pool, Stage
-  Area — instead of only a table number. Name and phone/membership
-  number are both required on every order now, so staff always know
-  whose order it is, at any location, and so a first-time customer
-  gets registered as a member correctly when the order is marked Paid.
-
-  BACKWARD COMPATIBILITY: your existing printed table QR codes
-  (encoding ?table=12 etc.) keep working — this page detects that old
-  URL format and auto-selects Table + that number, same as before.
-  New QR codes / links can use ?location=Bar+Area or similar instead.
-
-  This is what a customer sees after scanning the QR code at their
-  table (or any other order point). It shows the FULL bar + food
-  menu (drinks and food together) — for food-only ordering with a
-  simpler location picker, see canteen-order.html instead. Nothing
-  here touches stock or revenue — that only happens when staff mark
-  the order Paid on bar-dashboard.html.
-
-  OFFLINE SAFETY: if the connection drops right when they submit, the
-  order is saved on THEIR PHONE (localStorage) and retried
-  automatically every few seconds and the moment the connection comes
-  back — same pattern as everything else in this system.
-
-  SETUP: fill in API_URL below with the SAME /exec URL as your bar
-  dashboard (same Apps Script deployment). Fill in nothing else —
-  MoMo number/name come from the backend automatically.
+  v4.0 CHANGES:
+  - REMOVED Apps Script entirely. Location types and MoMo number/name
+    (previously from action=getMenuPublic) now come from a new public
+    `venue_settings` table in Supabase. Menu already came from Supabase
+    (bar_recipes/food_menu) as of the v3.0 migration note in this file
+    — now everything on this page is Supabase-only.
+  - MEMBER RECOGNITION FIX (was the top pilot complaint): the phone/ID
+    field now looks the customer up (via find_customer_flexible) the
+    moment they finish typing and tab/click away (on blur), not only
+    at the end of a completed order. A match auto-fills and locks the
+    name field and shows a small "Welcome back" note right under the
+    field, before they've added anything to cart or touched checkout.
+    First-time numbers are left editable with no error — they're new,
+    which is expected.
+  - Also re-runs the same lookup right when the cart modal opens, in
+    case they filled in the phone field after already opening it once.
+  - LAYOUT: .main max-width raised and made responsive (breakpoints at
+    900/1300/1700px), menu grid goes 2 → 3 → 4 columns on wider
+    screens instead of leaving space empty on tablets/desktops/wide
+    phones in landscape.
 -->
 <head>
 <meta charset="UTF-8">
@@ -74,15 +37,20 @@ body{background:var(--black);color:var(--text);font-family:'Syne',sans-serif;min
 .header .logo{font-size:17px;font-weight:800;letter-spacing:1px;color:var(--gold);}
 .header .loc-pill{display:inline-block;margin-top:6px;background:var(--border);color:var(--teal);font-family:'Space Mono',monospace;font-size:12px;padding:4px 12px;border-radius:20px;}
 .main{padding:14px 14px 0;max-width:640px;margin:0 auto;}
+@media(min-width:900px){.main{max-width:900px;padding:18px 24px 0;}}
+@media(min-width:1300px){.main{max-width:1240px;padding:22px 32px 0;}}
+@media(min-width:1700px){.main{max-width:1520px;padding:26px 40px 0;}}
 
 .loc-box{margin-bottom:14px;}
 .field-label{font-size:11px;color:var(--text-dim);font-weight:700;letter-spacing:0.5px;margin:10px 0 4px;text-transform:uppercase;}
 .loc-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:6px;}
+@media(min-width:900px){.loc-grid{grid-template-columns:repeat(4,1fr);}}
 .loc-option{background:var(--card);border:2px solid var(--border);border-radius:10px;padding:12px 10px;text-align:center;cursor:pointer;font-size:13px;font-weight:700;}
 .loc-option.selected{border-color:var(--gold);background:#1e1706;color:var(--gold);}
 /* v3.1: font-size raised from 14px to 16px to fix the iOS pinch-zoom bug. */
 .search-input{background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:12px 14px;color:var(--text);font-size:16px;width:100%;margin-bottom:12px;outline:none;font-family:'Syne',sans-serif;}
 .search-input:focus{border-color:var(--gold);}
+.search-input:disabled{opacity:0.7;border-color:var(--teal);color:var(--teal);}
 .btn{background:var(--gold);color:var(--black);border:none;padding:14px;border-radius:8px;font-size:14px;font-weight:800;width:100%;cursor:pointer;font-family:'Syne',sans-serif;margin-top:8px;}
 .btn:disabled{opacity:0.5;}
 .btn.secondary{background:var(--border);color:var(--text);}
@@ -98,6 +66,9 @@ body{background:var(--black);color:var(--text);font-family:'Syne',sans-serif;min
 .tab-pill{flex-shrink:0;background:var(--surface);border:1px solid var(--border);color:var(--text-dim);padding:7px 14px;border-radius:20px;font-size:11px;font-weight:700;cursor:pointer;font-family:'Syne',sans-serif;}
 .tab-pill.active{background:var(--gold);color:var(--black);border-color:var(--gold);}
 .menu-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;}
+@media(min-width:900px){.menu-grid{grid-template-columns:repeat(3,1fr);}}
+@media(min-width:1300px){.menu-grid{grid-template-columns:repeat(4,1fr);}}
+@media(min-width:1700px){.menu-grid{grid-template-columns:repeat(5,1fr);}}
 .menu-item{position:relative;background:var(--card);border:1px solid var(--border);border-radius:10px;padding:14px;cursor:pointer;text-align:left;}
 .menu-item.in-cart{border-color:var(--gold);background:#1e1706;}
 .menu-item .mi-name{font-size:15px;font-weight:800;line-height:1.25;}
@@ -109,6 +80,7 @@ body{background:var(--black);color:var(--text);font-family:'Syne',sans-serif;min
 
 .cart-bar{position:fixed;bottom:0;left:0;right:0;background:var(--surface);border-top:1px solid var(--gold);padding:14px 16px;display:none;align-items:center;justify-content:space-between;z-index:60;}
 .cart-bar.show{display:flex;}
+.cart-bar-inner{max-width:1520px;margin:0 auto;width:100%;display:flex;align-items:center;justify-content:space-between;}
 .cart-bar .cb-info{font-size:13px;}
 .cart-bar .cb-total{color:var(--gold);font-weight:800;font-family:'Space Mono',monospace;font-size:16px;}
 .cart-bar button{background:var(--gold);color:var(--black);border:none;padding:11px 20px;border-radius:8px;font-weight:800;font-size:13px;cursor:pointer;font-family:'Syne',sans-serif;}
@@ -116,6 +88,7 @@ body{background:var(--black);color:var(--text);font-family:'Syne',sans-serif;min
 .modal-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,0.85);z-index:100;align-items:flex-end;justify-content:center;}
 .modal-overlay.show{display:flex;}
 .modal-sheet{background:var(--surface);border-radius:16px 16px 0 0;padding:20px;max-width:640px;width:100%;max-height:88vh;overflow-y:auto;}
+@media(min-width:900px){.modal-overlay{align-items:center;}.modal-sheet{border-radius:16px;max-width:480px;max-height:82vh;}}
 .modal-title{font-size:16px;font-weight:800;color:var(--gold);margin-bottom:14px;display:flex;justify-content:space-between;align-items:center;}
 .modal-title .close-x{cursor:pointer;color:var(--muted);font-size:20px;}
 .cart-row{display:flex;align-items:center;gap:10px;background:var(--card);border:1px solid var(--border);border-radius:8px;padding:10px;margin-bottom:8px;}
@@ -140,6 +113,9 @@ body{background:var(--black);color:var(--text);font-family:'Syne',sans-serif;min
 .confirm-screen h2{color:var(--gold);font-size:18px;margin:10px 0 4px;}
 .confirm-screen .order-id{font-family:'Space Mono',monospace;color:var(--text-dim);font-size:12px;}
 .pending-note{background:#0f1a2a;border:1px solid var(--teal);border-radius:8px;padding:12px 14px;font-size:12px;line-height:1.6;margin:14px 0;color:#cfeceb;}
+.member-hint{font-size:11px;margin:-6px 0 12px;line-height:1.5;display:none;}
+.member-hint.found{display:block;color:var(--teal);}
+.member-hint.new{display:block;color:var(--text-dim);}
 </style>
 </head>
 <body>
@@ -149,7 +125,7 @@ body{background:var(--black);color:var(--text);font-family:'Syne',sans-serif;min
   <div class="loc-pill" id="locPill">Table Order</div>
 </div>
 
-<div id="memberBarWrap" style="display:none;padding:14px 14px 0;max-width:640px;margin:0 auto">
+<div id="memberBarWrap" style="display:none;padding:14px 14px 0;max-width:1520px;margin:0 auto">
   <div class="momo-box" id="memberBarContent" style="margin-top:0"></div>
 </div>
 
@@ -177,8 +153,10 @@ body{background:var(--black);color:var(--text);font-family:'Syne',sans-serif;min
 </div>
 
 <div class="cart-bar" id="cartBar">
-  <div class="cb-info"><span id="cbCount">0</span> items<br><span class="cb-total" id="cbTotal">GHS 0.00</span></div>
-  <button onclick="openCartModal()">VIEW ORDER</button>
+  <div class="cart-bar-inner">
+    <div class="cb-info"><span id="cbCount">0</span> items<br><span class="cb-total" id="cbTotal">GHS 0.00</span></div>
+    <button onclick="openCartModal()">VIEW ORDER</button>
+  </div>
 </div>
 
 <div class="modal-overlay" id="cartModal">
@@ -197,12 +175,13 @@ body{background:var(--black);color:var(--text);font-family:'Syne',sans-serif;min
       </div>
     </div>
 
+    <div class="field-label">Phone number or membership number (required)</div>
+    <input class="search-input" id="custPhone" placeholder="e.g. 0241234567 or THWGH12" onblur="onCustPhoneBlur()">
+    <div style="font-size:11px;color:var(--text-dim);margin:-6px 0 8px;line-height:1.5">Already a member? Enter your membership number. First time? Just enter your phone number — we'll set you up automatically.</div>
+    <div class="member-hint" id="memberHint"></div>
+
     <div class="field-label">Your name (required)</div>
     <input class="search-input" id="custName" placeholder="e.g. Ama Mensah">
-
-    <div class="field-label">Phone number or membership number (required)</div>
-    <input class="search-input" id="custPhone" placeholder="e.g. 0241234567 or THWGH12">
-    <div style="font-size:11px;color:var(--text-dim);margin:-6px 0 8px;line-height:1.5">Already a member? Enter your membership number. First time? Just enter your phone number — we'll set you up automatically.</div>
     <div style="font-size:11px;color:var(--teal);margin:0 0 12px;line-height:1.5">&#128274; Your name and phone number are used only to manage your points, membership, and order history at The White House Events &amp; More. We never sell or share your information with anyone outside the venue.</div>
 
     <div id="submitError" class="error-msg"></div>
@@ -219,12 +198,8 @@ body{background:var(--black);color:var(--text);font-family:'Syne',sans-serif;min
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script>
-const API_URL = 'https://script.google.com/macros/s/AKfycbyycYKCEtRchk0eToXIlMLgs3RmWIsKuUppD3UprPO8zLi9N5a9PIgn9uN4IKeip24E/exec'; // menu/location data still loads from here
-
-// SUPABASE MIGRATION (re-applied 19 Jul — was missing from the copy
-// pulled from GitHub, which is why new orders were landing in Google
-// Sheets instead of Supabase). Placing an order writes straight to
-// Postgres now; everything else on this page (menu load) is unchanged.
+// v4.0: Apps Script is gone from this page. Menu, location types, MoMo
+// config, and order writes are all Supabase now.
 const SUPABASE_URL = 'https://crvuzkyfrqbfmamegxjx.supabase.co';
 const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNydnV6a3lmcnFiZm1hbWVneGp4Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODQ0MzI5NjQsImV4cCI6MjEwMDAwODk2NH0.gMsv3yvw6plDCherA2YdU4UgWRMXUc9H1Hr_IdR9GxA';
 const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
@@ -238,9 +213,10 @@ let momoName = '';
 let cart = {};
 let activeCategory = 'All';
 let selectedPayment = null;
+let lookedUpCustomer = null; // set when onCustPhoneBlur finds a match
 
-// v3.1: group filter — mirrors COCKTAIL_CATEGORIES in Code.gs. If you
-// add/rename a cocktail-family category there, update it here too.
+// v3.1: group filter — mirrors COCKTAIL_CATEGORIES in the backend.
+// If you add/rename a cocktail-family category, update it here too.
 const COCKTAIL_CATEGORIES = ['Cocktail', 'Mocktail', 'Milkshake', 'Smoothie', 'Juice', 'VIP Special'];
 let activeGroup = 'BAR'; // ALL | BAR | CANTEEN | COCKTAILS — starts on BAR per request
 
@@ -267,7 +243,7 @@ function init(){
   const detail = params.get('detail');
   const legacyTable = params.get('table'); // backward compatibility with existing printed QR codes
   loadMemberAccount();
-  loadFoodMenu(function(){
+  loadVenueData(function(){
     if(loc && locationTypes.indexOf(loc) !== -1){
       selectLocation(loc, true);
       if(detail) {
@@ -286,22 +262,25 @@ function init(){
   resumePendingOrder();
 }
 
-async function loadFoodMenu(afterLoad){
+async function loadVenueData(afterLoad){
   try{
-    // SUPABASE MIGRATION: the menu shown to customers now comes from
-    // the same bar_recipes/food_menu tables mark_location_order_paid
-    // looks items up against — this is what fixes "item not found"
-    // errors caused by the two menu copies drifting apart. Location
-    // types and MoMo details aren't in Supabase yet, still from Sheets.
-    const [recipesRes, foodRes, appsScriptRes] = await Promise.all([
+    const [recipesRes, foodRes, settingsRes] = await Promise.all([
       supabaseClient.from('bar_recipes').select('item_name, category, price_ghs'),
       supabaseClient.from('food_menu').select('item_name, category, price_ghs'),
-      fetch(API_URL + '?action=getMenuPublic&t=' + Date.now())
+      supabaseClient.from('venue_settings').select('key, value')
     ]);
     if(recipesRes.error) throw new Error(recipesRes.error.message);
     if(foodRes.error) throw new Error(foodRes.error.message);
-    const data = await appsScriptRes.json();
-    if(!data.success) throw new Error(data.error || 'Could not load location/payment options');
+    if(settingsRes.error) throw new Error(settingsRes.error.message);
+
+    const settings = {};
+    (settingsRes.data||[]).forEach(row => { settings[row.key] = row.value; });
+    momoNumber = settings.momo_number || '';
+    momoName = settings.momo_name || '';
+    try{
+      locationTypes = settings.location_types ? JSON.parse(settings.location_types) : [];
+    }catch(e){ locationTypes = []; }
+    if(!locationTypes.length) locationTypes = ['Table','Pickup','Terrace Area','Room Number','Bar Area','VIP Area','Pool','Stage Area','Stage 2 Area'];
 
     const COCKTAIL_CATS = ['Cocktail','Mocktail','Milkshake','Smoothie','Juice','VIP Special'];
     const BAR_FIRST = ['Beer','Soft Drink','Water','Energy','Alcoholic Single','Just Sip','Shot','Pizza','Rice Dishes','Fries','Swallow & Stew','Light Bites'];
@@ -310,9 +289,6 @@ async function loadFoodMenu(afterLoad){
       .concat(foodRes.data.map(r => ({ item: r.item_name, category: r.category||'', price: parseFloat(r.price_ghs)||0, source: 'food' })))
       .sort((a,b) => catRank(a.category) - catRank(b.category));
 
-    momoNumber = data.momoNumber || '';
-    momoName = data.momoName || '';
-    locationTypes = data.locationTypes || ['Table','Pickup','Terrace Area','Room Number','Bar Area','VIP Area','Pool','Stage Area','Stage 2 Area'];
     renderLocationOptions();
     renderGroupTabs();
     renderTabs();
@@ -367,9 +343,9 @@ function selectLocation(loc, skipDetailReset){
     detailInput.value = locationDetail;
     detailInput.oninput = () => { locationDetail = detailInput.value.trim(); };
   }else{
-    // v3.1: "Delivery" is gone — Terrace Area, Stage 2 Area, Bar
-    // Area, VIP Area, Pool, and Stage Area are all just a spot on the
-    // property, no extra detail needed.
+    // "Delivery" is gone — Terrace Area, Stage 2 Area, Bar Area, VIP
+    // Area, Pool, and Stage Area are all just a spot on the property,
+    // no extra detail needed.
     detailBox.style.display = 'none';
   }
 }
@@ -423,8 +399,8 @@ function renderMenu(){
   const q = (document.getElementById('menuSearch').value||'').toLowerCase();
   let items = groupFilteredMenu();
   if(q){
-    // v3.2: a search term searches everything in the current BAR/
-    // CANTEEN/COCKTAILS group tab, ignoring the category tab underneath it.
+    // A search term searches everything in the current BAR/CANTEEN/
+    // COCKTAILS group tab, ignoring the category tab underneath it.
     items = items.filter(m => m.item.toLowerCase().includes(q));
   } else if(activeCategory !== 'All'){
     items = items.filter(m => (m.category||'Other') === activeCategory);
@@ -442,13 +418,11 @@ function renderMenu(){
       <div class="mi-price">GHS ${m.price.toFixed(2)}</div>`;
     el.querySelector('.mi-name').textContent = m.item;
     el.querySelector('.mi-cat').textContent = m.category || '';
-    // v5.3: update only THIS card in place instead of calling renderMenu()
-    // (which used to tear down and rebuild the entire grid on every single
-    // tap). Destroying and recreating every card on every tap is the
-    // classic cause of a tap "not registering the first time" on a phone
-    // \u2014 the element under the user's finger can be mid-replacement when
-    // the tap resolves. Updating one card's badge/class in place removes
-    // that race entirely.
+    // Update only THIS card in place instead of tearing down and
+    // rebuilding the entire grid on every single tap — rebuilding on
+    // every tap is the classic cause of a tap "not registering the
+    // first time" on a phone, since the element under the user's
+    // finger can be mid-replacement when the tap resolves.
     el.onclick = () => { cart[m.item] = (cart[m.item]||0) + 1; updateMenuCardQty(m.item); updateCartBar(); };
     grid.appendChild(el);
     updateMenuCardQtyEl(el, m.item);
@@ -466,7 +440,7 @@ function updateMenuCardQty(itemName){
   const grid = document.getElementById('menuGrid');
   const el = grid.querySelector(`[data-item="${CSS.escape(itemName)}"]`);
   if(el) updateMenuCardQtyEl(el, itemName);
-  else renderMenu(); // item isn't currently rendered (e.g. filtered out) \u2014 fall back to a full render
+  else renderMenu(); // item isn't currently rendered (e.g. filtered out) — fall back to a full render
 }
 
 function cartCount(){ return Object.values(cart).reduce((a,b)=>a+b,0); }
@@ -494,7 +468,15 @@ function setQty(name, qty){
   updateMenuCardQty(name); updateCartBar(); renderCartModal();
 }
 
-function openCartModal(){ document.getElementById('cartModal').classList.add('show'); renderCartModal(); }
+function openCartModal(){
+  document.getElementById('cartModal').classList.add('show');
+  renderCartModal();
+  // In case they typed a phone/ID before ever opening the cart, or
+  // the earlier blur lookup didn't fire (e.g. autofill), check again
+  // now that the field is visible and populated.
+  const phone = document.getElementById('custPhone').value.trim();
+  if(phone) onCustPhoneBlur();
+}
 function closeCartModal(){ document.getElementById('cartModal').classList.remove('show'); }
 
 function selectPayment(method){
@@ -504,6 +486,67 @@ function selectPayment(method){
   const btn = document.getElementById('submitBtn');
   btn.disabled = false;
   btn.textContent = method === 'MoMo' ? 'SUBMIT ORDER — PAY BY MOMO' : 'SUBMIT ORDER — PAY CASH ON DELIVERY/PICKUP';
+}
+
+// v4.0: MEMBER RECOGNITION — fires when the phone/ID field loses focus.
+// Looks the customer up via find_customer_flexible; on a match, fills
+// in and locks the name field (so a returning member never has to
+// retype it) and shows a "Welcome back" note. On no match, leaves the
+// name field open for a first-time customer — no error, that's normal.
+let custLookupToken = 0;
+async function onCustPhoneBlur(){
+  const phoneInput = document.getElementById('custPhone');
+  const nameInput = document.getElementById('custName');
+  const hintEl = document.getElementById('memberHint');
+  const query = phoneInput.value.trim();
+
+  if(!query){
+    lookedUpCustomer = null;
+    nameInput.disabled = false;
+    hintEl.className = 'member-hint';
+    hintEl.textContent = '';
+    return;
+  }
+
+  const myToken = ++custLookupToken;
+  hintEl.className = 'member-hint new';
+  hintEl.textContent = 'Checking membership…';
+
+  try{
+    const { data: custId, error } = await supabaseClient.rpc('find_customer_flexible', { p_query: query });
+    if(myToken !== custLookupToken) return; // a newer lookup superseded this one
+    if(error) throw new Error(error.message);
+
+    if(custId){
+      const { data: cust, error: custErr } = await supabaseClient.from('bar_customers').select('*').eq('customer_id', custId).maybeSingle();
+      if(myToken !== custLookupToken) return;
+      if(custErr || !cust){
+        lookedUpCustomer = null;
+        nameInput.disabled = false;
+        hintEl.className = 'member-hint new';
+        hintEl.textContent = "New here? We'll set up your membership when you submit this order.";
+        return;
+      }
+      lookedUpCustomer = { custId: cust.customer_id, name: cust.name, phone: cust.phone_number };
+      nameInput.value = cust.name;
+      nameInput.disabled = true;
+      hintEl.className = 'member-hint found';
+      hintEl.textContent = `&#10003; Welcome back, ${cust.name} — ${cust.customer_id} · ${cust.loyalty_points||0} points`.replace('&#10003;','✓');
+    }else{
+      lookedUpCustomer = null;
+      nameInput.disabled = false;
+      hintEl.className = 'member-hint new';
+      hintEl.textContent = "New here? We'll set up your membership when you submit this order.";
+    }
+  }catch(e){
+    if(myToken !== custLookupToken) return;
+    // Lookup failing shouldn't block ordering — just fall back to a
+    // normal manual name entry, same as if they'd never been looked up.
+    lookedUpCustomer = null;
+    nameInput.disabled = false;
+    hintEl.className = 'member-hint';
+    hintEl.textContent = '';
+  }
 }
 
 function renderCartModal(){
@@ -539,32 +582,30 @@ async function submitOrder(){
     document.getElementById('submitError').textContent = 'Please choose a table number above the menu.';
     closeCartModal(); window.scrollTo({top:0, behavior:'smooth'}); return;
   }
-  // v3.1: "Delivery" removed from ORDER_LOCATION_TYPES, so only Room
-  // Number still requires a detail field.
   if(locationType === 'Room Number' && !locationDetail){
     document.getElementById('submitError').textContent = 'Please add the room number above the menu.';
     closeCartModal(); window.scrollTo({top:0, behavior:'smooth'}); return;
   }
   const custName = document.getElementById('custName').value.trim();
   const phone = document.getElementById('custPhone').value.trim();
-  if(!custName){ document.getElementById('submitError').textContent = 'Please enter your name.'; return; }
   if(!phone){ document.getElementById('submitError').textContent = 'Please enter your phone number or membership number.'; return; }
+  if(!custName){ document.getElementById('submitError').textContent = 'Please enter your name.'; return; }
   if(!selectedPayment){ document.getElementById('submitError').textContent = 'Choose Cash or MoMo first.'; return; }
   const names = Object.keys(cart).filter(k => cart[k] > 0);
   if(names.length === 0){ document.getElementById('submitError').textContent = 'Your cart is empty.'; return; }
 
-  // v3.2: find-or-create the customer record now, at submit time,
-  // instead of waiting for staff to mark the order Paid — so the
+  // find-or-create the customer record now, at submit time, so the
   // confirmation and any future visit already has their ID/points.
+  // If onCustPhoneBlur already found them, this just re-confirms it.
   try{
     const { data: memberData, error: memberErr } = await supabaseClient.rpc('find_or_create_bar_customer', { p_phone: phone, p_name: custName });
     if(!memberErr && memberData) saveMember(memberData.custId, custName, phone);
   }catch(e){ console.log('find_or_create_bar_customer failed (non-fatal):', e); }
 
-  // v5.3: this page shows drinks AND food together, but they have to
-  // land on two different staff queues (bar vs canteen) \u2014 a mixed
-  // cart becomes two separate orders under the hood, invisible to the
-  // customer. Unknown/missing source defaults to the bar queue.
+  // This page shows drinks AND food together, but they have to land on
+  // two different staff queues (bar vs canteen) — a mixed cart becomes
+  // two separate orders under the hood, invisible to the customer.
+  // Unknown/missing source defaults to the bar queue.
   const barNames = names.filter(n => { const m = menu.find(mm=>mm.item===n); return !m || m.source !== 'food'; });
   const foodNames = names.filter(n => { const m = menu.find(mm=>mm.item===n); return m && m.source === 'food'; });
 
@@ -601,8 +642,8 @@ async function submitOrder(){
   if(failed.length > 0){
     renderMenu();
     renderCartModal();
-    const already = (succeeded.length + queued.length) > 0 ? ' The rest of your order already went through \u2014 you only need to retry this part.' : '';
-    document.getElementById('submitError').textContent = failed.map(o => (o.payload.label + ': ' + (o.result.error || 'Failed'))).join(' \u2014 ') + already;
+    const already = (succeeded.length + queued.length) > 0 ? ' The rest of your order already went through — you only need to retry this part.' : '';
+    document.getElementById('submitError').textContent = failed.map(o => (o.payload.label + ': ' + (o.result.error || 'Failed'))).join(' — ') + already;
     btn.disabled = false;
     btn.textContent = selectedPayment === 'MoMo' ? 'SUBMIT ORDER — PAY BY MOMO' : 'SUBMIT ORDER — PAY CASH ON DELIVERY/PICKUP';
     return;
@@ -616,8 +657,8 @@ async function submitOrder(){
   }
 }
 
-// SUPABASE MIGRATION: table_orders (Bar) and canteen_orders (Food) now
-// write directly to Postgres instead of going through Apps Script.
+// Bar orders (table_orders) and food orders (canteen_orders) write
+// directly to Postgres.
 const ORDER_TABLE_BY_ACTION = {
   placeTableOrder: 'table_orders',
   placeCanteenOrder: 'canteen_orders'
@@ -705,9 +746,13 @@ async function resumePendingOrder(){
 let resumeAttempts = 0;
 window.addEventListener('online', function(){ resumeAttempts = 0; resumePendingOrder(); });
 
-// v3.2: membership persistence — once a customer gives name+phone, keep
+// Membership persistence — once a customer gives name+phone, keep
 // their ID on this device so returning (even re-scanning the same QR)
 // shows their points/history immediately instead of starting over.
+// NOTE (diagnosed this session): some in-app browsers (WhatsApp,
+// Instagram, etc.) don't reliably persist localStorage between visits
+// — if a pilot member says "it keeps forgetting me", ask which app
+// they opened the link from before assuming this code is at fault.
 const MEMBER_KEY = 'whgh_member_v2';
 function getSavedMember(){ try{ return JSON.parse(localStorage.getItem(MEMBER_KEY)||'null'); }catch(e){ return null; } }
 function saveMember(custId, name, phone){
@@ -719,8 +764,9 @@ async function loadMemberAccount(){
   if(!member) return;
   const nameInput = document.getElementById('custName');
   const phoneInput = document.getElementById('custPhone');
-  if(nameInput && !nameInput.value) nameInput.value = member.name;
   if(phoneInput && !phoneInput.value) phoneInput.value = member.phone;
+  if(nameInput && !nameInput.value){ nameInput.value = member.name; nameInput.disabled = true; }
+  lookedUpCustomer = { custId: member.custId, name: member.name, phone: member.phone };
 
   try{
     const { data: cust } = await supabaseClient.from('bar_customers').select('*').eq('customer_id', member.custId).maybeSingle();
@@ -788,7 +834,7 @@ function showConfirmation(orders, payment){
   }else{
     payHtml = `<div class="momo-box">Pay <b>GHS ${total.toFixed(2)}</b> in cash when your order is delivered / ready for pickup.</div>`;
   }
-  const orderLines = orders.map(o => `<div class="order-id">${orders.length>1 ? o.label+': ' : ''}Order ${o.data.orderId} \u2014 GHS ${o.data.total.toFixed(2)}</div>`).join('');
+  const orderLines = orders.map(o => `<div class="order-id">${orders.length>1 ? o.label+': ' : ''}Order ${o.data.orderId} — GHS ${o.data.total.toFixed(2)}</div>`).join('');
   el.innerHTML = `
     <div class="ok-badge">&#9989;</div>
     <h2>Order sent!</h2>
