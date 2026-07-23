@@ -304,7 +304,7 @@ tr.low-row{background:#1a0a0a;}
       <div id="topSellersBody"><div class="empty">Loading...</div></div>
     </div>
     <div class="card">
-      <div class="card-title">&#8987; LONGEST ON THE SHELF <span style="font-weight:400;color:var(--muted);text-transform:none;letter-spacing:0">(never/least recently restocked)</span></div>
+      <div class="card-title">&#8987; LONGEST ON THE SHELF <span style="font-weight:400;color:var(--muted);text-transform:none;letter-spacing:0">(never restocked, or not restocked in 60+ days)</span></div>
       <div id="staleStockBody"><div class="empty">Loading...</div></div>
     </div>
   </div>
@@ -500,12 +500,18 @@ async function loadSupabaseBarData(){
   const topSellers = Object.values(salesByItem).sort((a,b)=>b.qty-a.qty).slice(0,8);
   const revenueByPaymentList = Object.keys(revenueByPayment).map(k=>({method:k, revenue:revenueByPayment[k]})).sort((a,b)=>b.revenue-a.revenue);
 
-  const staleStock = stock.slice().sort((a,b) => {
+  const STALE_THRESHOLD_MS = 60 * 24 * 3600 * 1000;
+  const now = Date.now();
+  const staleStock = stock.filter(s => {
+    if(!s.lastRestocked) return true;
+    const t = new Date(s.lastRestocked).getTime();
+    return isNaN(t) || (now - t) >= STALE_THRESHOLD_MS;
+  }).sort((a,b) => {
     const da = a.lastRestocked ? new Date(a.lastRestocked).getTime() : null;
     const db = b.lastRestocked ? new Date(b.lastRestocked).getTime() : null;
     if(da===null && db===null) return 0; if(da===null) return -1; if(db===null) return 1;
     return da - db;
-  }).slice(0,8);
+  });
 
   const restockLog = restockRes.data.map(r => ({
     timestamp: new Date(r.created_at).toLocaleString('en-GB'), item: r.item, qtyAdded: parseFloat(r.qty_added)||0,
@@ -702,7 +708,7 @@ function renderTopSellers(){
 function renderStaleStock(){
   const stale = barData.staleStock || [];
   const el = document.getElementById('staleStockBody');
-  if(stale.length===0){ el.innerHTML = '<div class="empty">No stock items yet.</div>'; return; }
+  if(stale.length===0){ el.innerHTML = '<div class="empty">Nothing has gone 60+ days without a restock right now.</div>'; return; }
   el.innerHTML = stale.map(s=>`
     <div class="rank-row">
       <div class="rank-info"><div class="rank-name">${s.item}</div><div class="rank-sub">${s.currentQty} ${s.unit} on hand · ${s.category}</div></div>
@@ -1394,8 +1400,32 @@ function shapeSupabaseOrderRow(r){
     orderId: r.order_id, locationType: r.location_type, locationDetail: r.location_detail || '',
     items: r.items_json || [], total: parseFloat(r.total_ghs) || 0, payment: r.payment_method,
     status: r.status, momoRef: r.momo_reference || '', customerName: r.customer_name,
-    phone: r.customer_phone, handledBy: r.handled_by || '', timestamp: r.created_at
+    phone: r.customer_phone, handledBy: r.handled_by || '', timestamp: r.created_at, notes: r.notes || ''
   };
+}
+
+// COMBO ORDERS: order.html writes "Also ordered: Food — CAN123..." into
+// notes when a customer ordered both drinks and food in one go. This
+// pulls the referenced canteen order's live status so the bar card can
+// show "🍽 Food also ordered — Preparing" instead of the two queues
+// looking like two unrelated customers.
+const COMBO_NOTE_RE = /Also ordered: (.+?) — (CAN\d+|TBL\d+)/;
+async function attachComboStatus(orders, counterpartTable){
+  const refs = [];
+  orders.forEach(o => {
+    const m = (o.notes||'').match(COMBO_NOTE_RE);
+    if(m) refs.push({ order: o, label: m[1], refId: m[2] });
+  });
+  if(refs.length === 0) return orders;
+  const ids = [...new Set(refs.map(r => r.refId))];
+  try{
+    const { data, error } = await supabaseClient.from(counterpartTable).select('order_id, status').in('order_id', ids);
+    if(error) throw error;
+    const statusMap = {};
+    (data||[]).forEach(row => { statusMap[row.order_id] = row.status; });
+    refs.forEach(r => { r.order.comboLabel = r.label; r.order.comboRefId = r.refId; r.order.comboStatus = statusMap[r.refId] || 'unknown'; });
+  }catch(e){ console.log('combo status lookup failed:', e); }
+  return orders;
 }
 
 async function loadTableOrders(){
@@ -1410,6 +1440,7 @@ async function loadTableOrders(){
     const shaped = data.map(shapeSupabaseOrderRow);
     const active = shaped.filter(o => o.status !== 'Paid' && o.status !== 'Cancelled');
     const recentFinal = shaped.filter(o => o.status === 'Paid' || o.status === 'Cancelled').slice(0, 15);
+    await attachComboStatus(active, 'canteen_orders');
     tableOrdersData = { success: true, active: active, recentFinal: recentFinal };
 
     const currentIds = new Set(active.map(o=>o.orderId));
@@ -1461,7 +1492,7 @@ function locationLabel(o){
 }
 
 function activeOrdersSignature(active){
-  return JSON.stringify((active||[]).map(o => [o.orderId, o.status, o.total, o.payment, o.locationType, o.locationDetail, o.customerName, JSON.stringify(o.items)]));
+  return JSON.stringify((active||[]).map(o => [o.orderId, o.status, o.total, o.payment, o.locationType, o.locationDetail, o.customerName, JSON.stringify(o.items), o.comboStatus||'']));
 }
 
 function renderTableOrders(){
@@ -1509,6 +1540,7 @@ function renderTableOrders(){
       actionsHtml += `<button class="oa-cancel" onclick="tableOrderAction('${o.orderId}','Cancelled')">CANCEL</button>`;
     }
 
+    const comboHtml = o.comboStatus ? `<div style="font-size:11px;color:var(--teal);background:#0f1a1a;border:1px solid var(--teal);border-radius:6px;padding:6px 10px;margin:6px 0">&#127859; ${o.comboLabel} also ordered — kitchen: <b>${o.comboStatus}</b> (${o.comboRefId})</div>` : '';
     return `<div class="order-card ${statusClass(o.status)}${isNew && o.status==='Placed' ? ' is-new':''}${isProcessing?' is-processing':''}" data-timestamp="${o.timestamp}">
       <div class="order-card-top">
         <div><span class="order-card-table">${locationLabel(o)}</span> &nbsp; <span class="order-status-pill ${statusPillClass(o.status)}">${o.status}</span></div>
@@ -1516,6 +1548,7 @@ function renderTableOrders(){
       </div>
       <div class="order-items-list">${itemsHtml}</div>
       <div class="order-items-list" style="margin-top:-4px;color:var(--text-dim)">${o.customerName || 'no name given'}</div>
+      ${comboHtml}
       <div class="order-card-footer">
         <span class="order-total">GHS ${o.total.toFixed(2)}</span>
         <span class="order-pay-badge">${o.payment}</span>
