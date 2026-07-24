@@ -116,6 +116,14 @@ body{background:var(--black);color:var(--text);font-family:'Syne',sans-serif;min
 .member-hint{font-size:11px;margin:-6px 0 12px;line-height:1.5;display:none;}
 .member-hint.found{display:block;color:var(--teal);}
 .member-hint.new{display:block;color:var(--text-dim);}
+.member-bar-wrap{padding:14px 14px 0;max-width:1520px;margin:0 auto;}
+.member-welcome-box{background:var(--surface);border:1px solid var(--teal);border-radius:8px;padding:18px;margin-top:0;font-size:15px;line-height:1.6;}
+.member-welcome-box .mw-title{font-size:20px;font-weight:800;color:var(--teal);margin-bottom:4px;}
+.member-welcome-box .mw-points{font-size:16px;color:var(--gold);font-weight:700;margin-top:4px;}
+.member-welcome-box .mw-phone{font-size:13px;color:var(--text-dim);margin-top:10px;}
+.member-welcome-box .mw-favorites-label{font-size:14px;color:var(--text-dim);margin-top:14px;}
+.member-welcome-box .mw-recent-label{font-size:14px;color:var(--text-dim);margin-top:14px;}
+.member-welcome-box .mw-recent-line{font-size:13px;color:var(--text-dim);margin-top:6px;}
 </style>
 </head>
 <body>
@@ -128,8 +136,8 @@ body{background:var(--black);color:var(--text);font-family:'Syne',sans-serif;min
   <div class="loc-pill" id="locPill">Table Order</div>
 </div>
 
-<div id="memberBarWrap" style="display:none;padding:14px 14px 0;max-width:1520px;margin:0 auto">
-  <div class="momo-box" id="memberBarContent" style="margin-top:0"></div>
+<div id="memberBarWrap" class="member-bar-wrap" style="display:none">
+  <div class="member-welcome-box" id="memberBarContent"></div>
 </div>
 
 <div class="main">
@@ -261,8 +269,13 @@ function init(){
       const detailSelect = document.getElementById('locationDetailSelect');
       if(detailSelect) detailSelect.value = legacyTable;
     }
+    // FIX: this used to run in parallel with loadVenueData, so a queued
+    // order left over from a dropped connection could get replayed
+    // before the menu array had loaded — trySendOrder would then look
+    // up each item's price against an empty menu, silently price
+    // everything at GHS 0.00. Now it only runs once menu is populated.
+    resumePendingOrder();
   });
-  resumePendingOrder();
 }
 
 async function loadVenueData(afterLoad){
@@ -688,6 +701,12 @@ async function trySendOrder(payload){
   if(!table){
     return { ok: false, error: 'Unknown order type: ' + payload.action };
   }
+  if(menu.length === 0){
+    // Menu hasn't loaded yet (e.g. a queued order replaying before
+    // loadVenueData finished) — pricing everything at 0 would be
+    // silently wrong, so queue instead and retry once it's loaded.
+    return { ok: false, queued: true, error: 'Menu not loaded yet — will retry' };
+  }
 
   const orderId = payload.orderId || ((payload.action === 'placeCanteenOrder' ? 'CAN' : 'TBL') + Date.now());
   let items;
@@ -802,20 +821,20 @@ async function loadMemberAccount(){
 
     const wrap = document.getElementById('memberBarWrap');
     const content = document.getElementById('memberBarContent');
-    let html = `<b>Welcome back, ${member.name}</b> — ${member.custId}`;
-    if(cust) html += ` · ${cust.loyalty_points||0} points · ${cust.total_visits||0} visits`;
-    html += `<div style="margin-top:8px;font-size:11px;color:var(--text-dim)">Phone on file: ${member.phone} &middot; <span style="color:var(--teal)">&#128274; kept private, never sold or shared</span></div>`;
+    let html = `<div class="mw-title">Welcome back to The White House Events & More, ${member.name}!</div><div>${member.custId}</div>`;
+    if(cust) html += `<div class="mw-points">${cust.loyalty_points||0} points &middot; ${cust.total_visits||0} visits</div>`;
+    html += `<div class="mw-phone">Phone on file: ${member.phone} &middot; <span style="color:var(--teal)">&#128274; kept private, never sold or shared</span></div>`;
     if(favorites.length){
-      html += `<div style="margin-top:10px;font-size:12px;color:var(--text-dim)">Your usual — tap to add:</div>`;
+      html += `<div class="mw-favorites-label">Your usual — tap to add:</div>`;
       html += `<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:6px">` +
-        favorites.map(f => `<button type="button" class="btn" style="width:auto;padding:8px 14px;margin:0" onclick="reorderFavorite('${f.replace(/'/g,"\\'")}')">+ ${f}</button>`).join('') + `</div>`;
+        favorites.map(f => `<button type="button" class="btn" style="width:auto;padding:10px 16px;margin:0;font-size:14px" onclick="reorderFavorite('${f.replace(/'/g,"\\'")}')">+ ${f}</button>`).join('') + `</div>`;
     }
     if(allOrders.length){
-      html += `<div style="margin-top:12px;font-size:12px;color:var(--text-dim)">Recent orders:</div>` +
+      html += `<div class="mw-recent-label">Recent orders:</div>` +
         allOrders.slice(0,5).map(o => {
           const d = new Date(o.created_at);
           const itemsStr = (o.items_json||[]).map(i=>`${i.qty}x ${i.item}`).join(', ');
-          return `<div style="font-size:11px;color:var(--text-dim);margin-top:4px">${d.toLocaleDateString('en-GB')} — ${itemsStr} — GHS ${(o.total_ghs||0).toFixed(2)}</div>`;
+          return `<div class="mw-recent-line">${d.toLocaleDateString('en-GB')} — ${itemsStr} — GHS ${(o.total_ghs||0).toFixed(2)}</div>`;
         }).join('');
     }
     content.innerHTML = html;
