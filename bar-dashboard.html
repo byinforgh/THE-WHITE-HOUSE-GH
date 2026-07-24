@@ -110,6 +110,7 @@ tr.low-row{background:#1a0a0a;}
 .combo-item:hover,.combo-item.active{background:#221f16;color:var(--gold);}
 .combo-empty{padding:9px 14px;font-size:12px;color:var(--muted);}
 .scroll-table{max-height:420px;overflow-y:auto;}
+.scroll-table thead th{position:sticky;top:0;background:var(--card);z-index:2;}
 .badge-unit{font-size:9px;color:var(--muted);font-family:'Space Mono',monospace;}
 .staff-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:10px;}
 .staff-card{background:var(--surface);border:1px solid var(--border);border-left:3px solid var(--purple);border-radius:6px;padding:12px 14px;}
@@ -187,16 +188,16 @@ tr.low-row{background:#1a0a0a;}
 .order-card.is-processing{opacity:0.5;}
 @keyframes orderFlash{0%,100%{background:var(--surface);}50%{background:#3a2a06;}}
 .order-card-top{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:8px;}
-.order-card-table{font-weight:800;font-size:14px;}
+.order-card-table{font-weight:800;font-size:20px;}
 .order-card-age{font-size:10px;color:var(--muted);font-family:'Space Mono',monospace;}
 .order-status-pill{font-size:9px;font-weight:800;letter-spacing:0.5px;padding:3px 9px;border-radius:12px;text-transform:uppercase;}
 .order-status-pill.placed{background:#2a2006;color:var(--gold);}
 .order-status-pill.preparing{background:#0f2a27;color:var(--teal);}
 .order-status-pill.delivered{background:#2a1f06;color:#e0aa50;}
-.order-items-list{font-size:12px;color:var(--text-dim);margin:6px 0 10px;line-height:1.6;}
+.order-items-list{font-size:16px;color:var(--text-dim);margin:6px 0 10px;line-height:1.6;}
 .order-card-footer{display:flex;justify-content:space-between;align-items:center;gap:10px;}
-.order-total{font-family:'Space Mono',monospace;font-weight:800;color:var(--gold);}
-.order-pay-badge{font-size:10px;color:var(--muted);font-family:'Space Mono',monospace;}
+.order-total{font-family:'Space Mono',monospace;font-weight:800;color:var(--gold);font-size:22px;}
+.order-pay-badge{font-size:13px;color:var(--muted);font-family:'Space Mono',monospace;}
 .order-staff-select{background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:8px 10px;color:var(--text);font-size:16px;font-family:'Syne',sans-serif;width:100%;margin-top:8px;margin-bottom:2px;}
 .order-actions{display:flex;gap:6px;flex-wrap:wrap;margin-top:10px;}
 .order-actions button{flex:1;min-width:110px;padding:8px 10px;font-size:11px;border-radius:6px;border:none;font-weight:800;cursor:pointer;font-family:'Syne',sans-serif;}
@@ -304,8 +305,8 @@ tr.low-row{background:#1a0a0a;}
       <div id="topSellersBody"><div class="empty">Loading...</div></div>
     </div>
     <div class="card">
-      <div class="card-title">&#8987; LONGEST ON THE SHELF <span style="font-weight:400;color:var(--muted);text-transform:none;letter-spacing:0">(never restocked, or not restocked in 60+ days)</span></div>
-      <div id="staleStockBody"><div class="empty">Loading...</div></div>
+      <div class="card-title">&#8987; LONGEST ON THE SHELF <span style="font-weight:400;color:var(--muted);text-transform:none;letter-spacing:0">(never restocked, or not restocked in 60+ days — scroll inside this box)</span></div>
+      <div class="scroll-table" id="staleStockBody"><div class="empty">Loading...</div></div>
     </div>
   </div>
 
@@ -349,6 +350,15 @@ tr.low-row{background:#1a0a0a;}
 const SUPABASE_URL = 'https://crvuzkyfrqbfmamegxjx.supabase.co';
 const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNydnV6a3lmcnFiZm1hbWVneGp4Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODQ0MzI5NjQsImV4cCI6MjEwMDAwODk2NH0.gMsv3yvw6plDCherA2YdU4UgWRMXUc9H1Hr_IdR9GxA';
 const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+// FIX: page refresh was landing scrolled down near the Staff section.
+// That was Chrome's automatic scroll-restoration trying to put the
+// viewport back where it was before reload, fighting with content
+// that loads in asynchronously and changes height as it goes. Turning
+// restoration off and forcing the top on load makes every refresh
+// start from the same place.
+if('scrollRestoration' in history){ history.scrollRestoration = 'manual'; }
+window.scrollTo(0,0);
 
 // v6.0: Apps Script is no longer used anywhere on this page. Everything
 // (stock, orders, menu, restocks, staff, customer lookup) reads from
@@ -446,15 +456,19 @@ function clearApiError(){
 }
 
 async function loadSupabaseBarData(){
-  const [stockRes, ordersRes, recipesRes, foodRes, restockRes, staffRes] = await Promise.all([
+  const [stockRes, ordersRes, recipesRes, foodRes, restockRes, staffRes, settingsRes] = await Promise.all([
     supabaseClient.from('bar_stock').select('*').order('item'),
     supabaseClient.from('bar_orders').select('*').order('created_at', { ascending: false }).limit(500),
     supabaseClient.from('bar_recipes').select('item_name, category, price_ghs'),
     supabaseClient.from('food_menu').select('item_name, category, price_ghs'),
     supabaseClient.from('restock_log').select('*').order('created_at', { ascending: false }).limit(15),
-    supabaseClient.from('staff').select('*').eq('active', true).order('slot')
+    supabaseClient.from('staff').select('*').order('slot'),
+    supabaseClient.from('venue_settings').select('key, value')
   ]);
-  [stockRes, ordersRes, recipesRes, foodRes, restockRes, staffRes].forEach(r => { if(r.error) throw new Error(r.error.message); });
+  [stockRes, ordersRes, recipesRes, foodRes, restockRes, staffRes, settingsRes].forEach(r => { if(r.error) throw new Error(r.error.message); });
+
+  const venueSettings = {};
+  (settingsRes.data||[]).forEach(row => { venueSettings[row.key] = row.value; });
 
   const categoryMap = {};
   recipesRes.data.forEach(r => { if(r.item_name && r.category) categoryMap[r.item_name.trim().toLowerCase()] = r.category; });
@@ -476,7 +490,8 @@ async function loadSupabaseBarData(){
 
   const staff = staffRes.data.map(s => ({
     initials: s.initials || s.staff_code || '', name: s.full_name || '',
-    workingDays: s.working_days || '', workingHours: s.working_hours || (s.shift_start && s.shift_end ? (s.shift_start + ' – ' + s.shift_end) : '')
+    workingDays: s.working_days || '', workingHours: s.working_hours || (s.shift_start && s.shift_end ? (s.shift_start + ' – ' + s.shift_end) : ''),
+    active: s.active !== false, onDuty: !!s.on_duty
   }));
 
   const GHANA_TZ_TODAY = new Date().toLocaleDateString('en-CA', {timeZone:'Africa/Accra'});
@@ -519,7 +534,8 @@ async function loadSupabaseBarData(){
   }));
 
   return { stock, menu, todayOrders: todayOrders.reverse(), todayRevenue, todayItemCount, revenueByPayment: revenueByPaymentList,
-    topSellers, staleStock, restockLog, staff, lowStockCount: stock.filter(s=>s.lowStock).length };
+    topSellers, staleStock, restockLog, staff, lowStockCount: stock.filter(s=>s.lowStock).length,
+    momoNumber: venueSettings.momo_number || '', momoName: venueSettings.momo_name || '' };
 }
 
 async function loadData(){
@@ -632,7 +648,7 @@ function renderOrders(){
   document.getElementById('ordersBody').innerHTML = orders.map(o=>{
     const t = new Date(o.timestamp);
     const timeStr = isNaN(t.getTime()) ? '—' : t.toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit'});
-    return `<tr><td style="font-family:'Space Mono',monospace;font-size:11px">${timeStr}</td><td>${o.item}</td><td>${o.qty}</td><td style="color:var(--gold);font-weight:700">&#8373;${o.lineTotal.toFixed(2)}</td><td>${o.staffInitials||'—'}</td><td style="font-family:'Space Mono',monospace;font-size:11px">${o.custId&&o.custId!=='—'?o.custId:'walk-in'}</td></tr>`;
+    return `<tr><td style="font-family:'Space Mono',monospace;font-size:12px">${timeStr}</td><td style="font-size:15px;font-weight:600">${o.item}</td><td style="font-size:14px">${o.qty}</td><td style="color:var(--gold);font-weight:700;font-size:16px">&#8373;${o.lineTotal.toFixed(2)}</td><td style="font-size:13px">${o.staffInitials||'—'}</td><td style="font-family:'Space Mono',monospace;font-size:12px">${o.custId&&o.custId!=='—'?o.custId:'walk-in'}</td></tr>`;
   }).join('');
 }
 
@@ -731,7 +747,7 @@ function renderRestockLog(){
 }
 
 function renderStaff(){
-  const staff = (barData.staff||[]).filter(s=>s.name || (s.initials && s.initials.trim()));
+  const staff = (barData.staff||[]).filter(s=>s.active && (s.name || (s.initials && s.initials.trim())));
   const el = document.getElementById('staffGrid');
   if(staff.length===0){ el.innerHTML = '<div class="empty">No active staff profiles found in Supabase yet — add rows in the staff table.</div>'; return; }
   el.innerHTML = staff.map(s=>`
@@ -739,11 +755,22 @@ function renderStaff(){
       <div class="staff-initials">${s.initials||'—'}</div>
       <div class="staff-name">${s.name||'(name not set)'}</div>
       <div class="staff-meta">${s.workingDays||'Days not set'}<br>${s.workingHours||'Hours not set'}</div>
+      <button class="btn" style="margin-top:10px;${s.onDuty?'background:var(--green)':'background:var(--border);color:var(--text)'}" onclick="toggleOnDuty('${s.initials}', ${!s.onDuty})">${s.onDuty ? '&#9679; ON DUTY — TAP TO CHECK OUT' : 'CHECK IN'}</button>
     </div>`).join('');
 }
 
+async function toggleOnDuty(initials, newState){
+  try{
+    const { error } = await supabaseClient.rpc('set_staff_on_duty', { p_initials: initials, p_on_duty: newState });
+    if(error) throw new Error(error.message);
+    loadData();
+  }catch(e){ alert('Could not update on-duty status: ' + e.message); }
+}
+
 function populateStaffDropdowns(){
-  const staff = (barData.staff||[]).filter(s=>s.initials && s.initials.trim());
+  const allActive = (barData.staff||[]).filter(s=>s.active && s.initials && s.initials.trim());
+  const onDuty = allActive.filter(s=>s.onDuty);
+  const staff = onDuty.length ? onDuty : allActive;
   const sel = document.getElementById('restockBy');
   const current = sel.value;
   sel.innerHTML = '<option value="">Restocked by... (required)</option>' +
@@ -1110,6 +1137,12 @@ function cartSubtotal(){
   return total;
 }
 
+function getServingStaff(){
+  const allActive = (barData.staff||[]).filter(s=>s.active && s.initials && s.initials.trim());
+  const onDuty = allActive.filter(s=>s.onDuty);
+  return onDuty.length ? onDuty : allActive;
+}
+
 function renderQuickSellPanel(){
   const panel = document.getElementById('quickSellPanel');
   const menu = barData.menu || [];
@@ -1128,7 +1161,7 @@ function renderQuickSellPanel(){
   const prevNewName = document.getElementById('qsNewName') ? document.getElementById('qsNewName').value : '';
   const prevPayment = document.getElementById('qsPayment') ? document.getElementById('qsPayment').value : '';
 
-  const staff = (barData.staff||[]).filter(s=>s.initials && s.initials.trim());
+  const staff = getServingStaff();
   const subtotal = cartSubtotal();
 
   const cartRowsHtml = itemNames.map(name => {
@@ -1220,7 +1253,7 @@ async function submitQuickSellCart(){
   const resultEl = document.getElementById('qsResult');
   const confirmBtn = document.getElementById('qsConfirmBtn');
 
-  const staff = (barData.staff||[]).filter(s=>s.initials && s.initials.trim());
+  const staff = getServingStaff();
   if(staff.length === 0){
     resultEl.innerHTML = '<span style="color:var(--red)">No active staff are set up yet — add rows in the Supabase staff table, then Refresh before selling.</span>';
     return;
@@ -1511,7 +1544,7 @@ function renderTableOrders(){
 
   if(active.length === 0){ el.innerHTML = '<div class="empty">No active table orders right now.</div>'; return; }
 
-  const staffList = (barData.staff||[]).filter(s=>s.initials && s.initials.trim());
+  const staffList = getServingStaff();
   const staffOptionsHtml = (selected) => '<option value="">Select staff...</option>' +
     staffList.map(s => `<option value="${s.initials}" ${selected===s.initials?'selected':''}>${s.initials}${s.name?' — '+s.name:''}</option>`).join('');
 
@@ -1541,6 +1574,7 @@ function renderTableOrders(){
     }
 
     const comboHtml = o.comboStatus ? `<div style="font-size:11px;color:var(--teal);background:#0f1a1a;border:1px solid var(--teal);border-radius:6px;padding:6px 10px;margin:6px 0">&#127859; ${o.comboLabel} also ordered — kitchen: <b>${o.comboStatus}</b> (${o.comboRefId})</div>` : '';
+    const momoHtml = o.payment === 'MoMo' ? `<div style="font-size:13px;font-weight:800;color:var(--gold);background:#2a2006;border:1px solid var(--gold-dim);border-radius:6px;padding:8px 10px;margin:6px 0">&#128241; PAY BY MOMO — check ${barData.momoNumber||'(number not set)'}${barData.momoName?' ('+barData.momoName+')':''} for GHS ${o.total.toFixed(2)}</div>` : '';
     return `<div class="order-card ${statusClass(o.status)}${isNew && o.status==='Placed' ? ' is-new':''}${isProcessing?' is-processing':''}" data-timestamp="${o.timestamp}">
       <div class="order-card-top">
         <div><span class="order-card-table">${locationLabel(o)}</span> &nbsp; <span class="order-status-pill ${statusPillClass(o.status)}">${o.status}</span></div>
@@ -1548,6 +1582,7 @@ function renderTableOrders(){
       </div>
       <div class="order-items-list">${itemsHtml}</div>
       <div class="order-items-list" style="margin-top:-4px;color:var(--text-dim)">${o.customerName || 'no name given'}</div>
+      ${momoHtml}
       ${comboHtml}
       <div class="order-card-footer">
         <span class="order-total">GHS ${o.total.toFixed(2)}</span>
